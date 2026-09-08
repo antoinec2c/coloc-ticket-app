@@ -4,11 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "node scripts/prepare_db.mjs && prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
     "test": "npx tsx scripts/run_all_tests.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "node scripts/prepare_db.mjs && prisma generate"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
