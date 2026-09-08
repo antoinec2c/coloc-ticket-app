@@ -1,0 +1,16 @@
+{
+  "name": "ColocPot - Tickets & Pot Commun",
+  "short_name": "ColocPot",
+  "description": "Scannez vos tickets de caisse froissés, isolez vos achats perso et équilibrez le pot commun de la coloc.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

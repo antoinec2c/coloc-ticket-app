@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#16a34a;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="24" fill="url(#grad)"/>
+  <!-- Receipt icon -->
+  <path d="M28 22h44a4 4 0 0 1 4 4v52l-6-4-6 4-6-4-6 4-6-4-6 4-6-4-6 4V26a4 4 0 0 1 4-4z" fill="#ffffff" opacity="0.95"/>
+  <rect x="36" y="32" width="28" height="4" rx="2" fill="#16a34a"/>
+  <rect x="36" y="40" width="20" height="4" rx="2" fill="#94a3b8"/>
+  <rect x="36" y="48" width="24" height="4" rx="2" fill="#94a3b8"/>
+  <!-- Heart / Pot badge -->
+  <circle cx="68" cy="62" r="14" fill="#3b82f6"/>
+  <path d="M68 57c-2-3-6-1-6 2 0 3 6 7 6 7s6-4 6-7c0-3-4-5-6-2z" fill="#ffffff"/>
+</svg>

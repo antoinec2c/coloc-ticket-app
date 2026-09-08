@@ -1,0 +1,66 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Member {
+  id        String   @id @default(uuid())
+  name      String
+  avatar    String   // emoji ou lettre
+  color     String   // code hex pour badges
+  role      String   @default("coloc")
+  createdAt DateTime @default(now())
+
+  expensesPaid Expense[] @relation("PayerRelation")
+  settlementsSent Settlement[] @relation("SettlementFrom")
+  settlementsReceived Settlement[] @relation("SettlementTo")
+}
+
+model Expense {
+  id           String        @id @default(uuid())
+  title        String
+  store        String?       // ex: Carrefour, Leclerc, EDF
+  date         DateTime      @default(now())
+  totalAmount  Float
+  colocAmount  Float         // Montant partagé
+  persoAmount  Float         // Montant perso
+  fileType     String?       // "receipt_photo", "invoice_pdf", "manual"
+  receiptImage String?       // Base64 ou data URI
+  notes        String?
+  createdAt    DateTime      @default(now())
+
+  payerId      String
+  payer        Member        @relation("PayerRelation", fields: [payerId], references: [id], onDelete: Cascade)
+
+  items        ExpenseItem[]
+}
+
+model ExpenseItem {
+  id               String   @id @default(uuid())
+  name             String
+  quantity         Float    @default(1)
+  unitPrice        Float
+  totalPrice       Float
+  isPersonal       Boolean  @default(false)
+  category         String   @default("Alimentation")
+
+  expenseId        String
+  expense          Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+}
+
+model Settlement {
+  id           String   @id @default(uuid())
+  amount       Float
+  date         DateTime @default(now())
+  notes        String?
+
+  fromMemberId String
+  fromMember   Member   @relation("SettlementFrom", fields: [fromMemberId], references: [id], onDelete: Cascade)
+
+  toMemberId   String
+  toMember     Member   @relation("SettlementTo", fields: [toMemberId], references: [id], onDelete: Cascade)
+}
