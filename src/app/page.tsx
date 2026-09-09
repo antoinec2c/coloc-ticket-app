@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { Member, Expense, MemberBalance, Debt, ExtractedReceipt } from '@/types';
 import ZeroWaitReview from '@/components/ZeroWaitReview';
+import ManualExpenseModal from '@/components/ManualExpenseModal';
 import {
   Camera,
   Upload,
@@ -27,6 +28,7 @@ export default function Home() {
   const [viewState, setViewState] = useState<'dashboard' | 'review'>('dashboard');
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [manualInitialData, setManualInitialData] = useState<ExtractedReceipt | null>(null);
+  const [showManualModal, setShowManualModal] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'expenses' | 'balances'>('expenses');
   const [clearing, setClearing] = useState(false);
@@ -74,23 +76,7 @@ export default function Home() {
 
   // Saisie manuelle
   const handleManualEntry = () => {
-    setSelectedImage(null);
-    setManualInitialData({
-      store: 'Courses partagées',
-      date: new Date().toISOString().split('T')[0],
-      total: 15,
-      items: [
-        {
-          name: 'Courses',
-          quantity: 1,
-          unitPrice: 15,
-          totalPrice: 15,
-          isPersonal: false,
-          category: 'Alimentation',
-        },
-      ],
-    });
-    setViewState('review');
+    setShowManualModal(true);
   };
 
   const handleExpenseSaved = () => {
@@ -405,6 +391,13 @@ export default function Home() {
             </div>
           )}
         </div>
+      )}
+
+      {showManualModal && (
+        <ManualExpenseModal
+          onClose={() => setShowManualModal(false)}
+          onSaved={fetchData}
+        />
       )}
     </div>
   );
