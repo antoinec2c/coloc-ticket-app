@@ -174,3 +174,78 @@ export async function transcribeAudioBlob(blob: Blob, mimeType: string): Promise
   return (data.text || '').trim();
 }
 
+/**
+ * Nettoie et déduplique les répétitions de phrases ou de mots consécutifs.
+ * Corrige le bogue notoire d'Android Chrome (Web Speech API) qui ré-émet le texte précédent
+ * ou duplique les phrases dictées dans les événements intermédiaires et finaux.
+ */
+export function cleanRepeatedPhrases(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  let cleaned = text.trim().replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+
+  // 1. Répétition globale stricte (ex: 'Phrase A. Phrase A.' ou 'Phrase A Phrase A')
+  for (let parts = 2; parts <= 10; parts++) {
+    if (cleaned.length % parts === 0) {
+      const partLen = cleaned.length / parts;
+      const firstPart = cleaned.slice(0, partLen).trim();
+      let allMatch = true;
+      for (let p = 1; p < parts; p++) {
+        const seg = cleaned.slice(p * partLen, (p + 1) * partLen).trim();
+        if (seg.toLowerCase() !== firstPart.toLowerCase()) {
+          allMatch = false;
+          break;
+        }
+      }
+      if (allMatch && firstPart.length > 2) {
+        cleaned = firstPart;
+        break;
+      }
+    }
+  }
+
+  // 2. Détection et suppression des répétitions de sous-séquences consécutives (1 à 20 mots)
+  let words = cleaned.split(' ');
+  if (words.length <= 1) return cleaned;
+
+  let changed = true;
+  let passes = 0;
+  while (changed && passes < 5) {
+    changed = false;
+    passes++;
+    const resultWords: string[] = [];
+    let i = 0;
+    while (i < words.length) {
+      let matchedLen = 0;
+      const maxLen = Math.min(20, Math.floor((words.length - i) / 2));
+      for (let len = maxLen; len >= 1; len--) {
+        let isRepeat = true;
+        for (let k = 0; k < len; k++) {
+          const w1 = words[i + k].toLowerCase().replace(/[^a-z0-9à-ÿ]/gi, '');
+          const w2 = words[i + len + k].toLowerCase().replace(/[^a-z0-9à-ÿ]/gi, '');
+          if (w1 !== w2) {
+            isRepeat = false;
+            break;
+          }
+        }
+        if (isRepeat) {
+          matchedLen = len;
+          break;
+        }
+      }
+
+      if (matchedLen > 0) {
+        changed = true;
+        i += matchedLen;
+      } else {
+        resultWords.push(words[i]);
+        i++;
+      }
+    }
+    words = resultWords;
+  }
+
+  return words.join(' ').trim();
+}
+
+

@@ -7,6 +7,7 @@ import { VoiceMatchResult } from '@/lib/voiceMatcher';
 import {
   startAudioRecording,
   transcribeAudioBlob,
+  cleanRepeatedPhrases,
   ActiveRecordingSession,
 } from '@/lib/audioRecorder';
 
@@ -24,6 +25,8 @@ export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
   const recordingSessionRef = useRef<ActiveRecordingSession | null>(null);
+  const accumulatedFinalRef = useRef<string>('');
+  const transcriptRef = useRef<string>('');
 
   // Nettoyage au démontage
   useEffect(() => {
@@ -39,6 +42,8 @@ export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
     setErrorMessage(null);
     setFeedback(null);
     setTranscript('');
+    accumulatedFinalRef.current = '';
+    transcriptRef.current = '';
 
     const SpeechRecognition =
       typeof window !== 'undefined' &&
@@ -48,18 +53,52 @@ export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
     if (SpeechRecognition) {
       try {
         const recognition = new SpeechRecognition();
-        recognition.continuous = false;
+        const isMobile =
+          typeof navigator !== 'undefined' &&
+          /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+            navigator.userAgent
+          );
+
+        // Sur mobile (notamment Android Chrome), continuous = true déclenche un bogue de répétition.
+        recognition.continuous = !isMobile;
         recognition.interimResults = true;
         recognition.lang = 'fr-FR';
 
         recognition.onstart = () => {
           setIsListening(true);
           setErrorMessage(null);
+          accumulatedFinalRef.current = '';
+          transcriptRef.current = '';
+          setTranscript('');
         };
 
         recognition.onresult = (event: any) => {
-          const current = event.results[0][0].transcript;
-          setTranscript(current);
+          let finalChunk = '';
+          let interimChunk = '';
+
+          // Utiliser event.resultIndex pour ne jamais concaténer les anciens résultats
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            const item = event.results[i];
+            const text = item[0]?.transcript || '';
+            if (item.isFinal) {
+              finalChunk += ' ' + text;
+            } else {
+              interimChunk += ' ' + text;
+            }
+          }
+
+          if (finalChunk.trim()) {
+            accumulatedFinalRef.current = (
+              accumulatedFinalRef.current +
+              ' ' +
+              finalChunk
+            ).trim();
+          }
+
+          const rawCombined = (accumulatedFinalRef.current + ' ' + interimChunk).trim();
+          const cleaned = cleanRepeatedPhrases(rawCombined);
+          transcriptRef.current = cleaned;
+          setTranscript(cleaned);
         };
 
         recognition.onerror = (event: any) => {
@@ -81,6 +120,15 @@ export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
 
         recognition.onend = () => {
           setIsListening(false);
+          const finalPhrase = cleanRepeatedPhrases(
+            (accumulatedFinalRef.current || transcriptRef.current).trim()
+          );
+          if (finalPhrase) {
+            processCommand(finalPhrase);
+            transcriptRef.current = '';
+            accumulatedFinalRef.current = '';
+            setTranscript('');
+          }
         };
 
         recognitionRef.current = recognition;
@@ -118,10 +166,12 @@ export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
 
       try {
         const { blob, mimeType } = await session.stop();
-        const text = await transcribeAudioBlob(blob, mimeType);
+        const rawText = await transcribeAudioBlob(blob, mimeType);
+        const text = cleanRepeatedPhrases(rawText);
         setIsTranscribing(false);
         if (text) {
           processCommand(text);
+          setTranscript('');
         } else {
           setErrorMessage('Aucun mot distinct détecté. Rapprochez-vous du micro ou utilisez la saisie ci-dessous.');
         }
@@ -145,14 +195,15 @@ export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
 
   // Traiter la commande
   const processCommand = async (phrase: string) => {
-    if (!phrase.trim()) return;
+    const cleanPhrase = cleanRepeatedPhrases(phrase.trim());
+    if (!cleanPhrase) return;
 
     try {
       const res = await fetch('/api/voice-match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transcript: phrase,
+          transcript: cleanPhrase,
           items,
         }),
       });
@@ -163,18 +214,12 @@ export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
         setFeedback(result.explanation);
         setErrorMessage(null);
         setTextInput('');
+        setTranscript('');
       }
     } catch (err) {
       console.error(err);
     }
   };
-
-  // Traitement dès que la dictée se termine avec du texte
-  useEffect(() => {
-    if (!isListening && transcript.trim().length > 0) {
-      processCommand(transcript);
-    }
-  }, [isListening, transcript]);
 
   return (
     <div className="rounded-2xl border-2 border-emerald-500/30 bg-gradient-to-r from-emerald-50/60 via-teal-50/40 to-emerald-50/60 p-4 shadow-sm space-y-3">

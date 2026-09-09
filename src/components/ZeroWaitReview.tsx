@@ -7,6 +7,7 @@ import { matchVoiceInstruction } from '@/lib/voiceMatcher';
 import {
   startAudioRecording,
   transcribeAudioBlob,
+  cleanRepeatedPhrases,
   ActiveRecordingSession,
 } from '@/lib/audioRecorder';
 import {
@@ -79,6 +80,7 @@ export default function ZeroWaitReview({
   const recognitionRef = useRef<any>(null);
   const recordingSessionRef = useRef<ActiveRecordingSession | null>(null);
   const transcriptRef = useRef<string>('');
+  const accumulatedFinalRef = useRef<string>('');
   const pendingPhrasesRef = useRef<string[]>([]);
   const itemsRef = useRef<ExpenseItem[]>(items);
 
@@ -89,7 +91,7 @@ export default function ZeroWaitReview({
 
   // Traiter la phrase vocale ou tapée
   const handleApplyVoice = (phrase: string) => {
-    const cleanPhrase = phrase.trim();
+    const cleanPhrase = cleanRepeatedPhrases(phrase.trim());
     if (!cleanPhrase) return;
 
     setTextInput('');
@@ -289,7 +291,16 @@ export default function ZeroWaitReview({
 
     if (SpeechRecognition) {
       const rec = new SpeechRecognition();
-      rec.continuous = true; // Mode continu pour ne pas couper au milieu des mots ou hésitations !
+      const isMobile =
+        typeof navigator !== 'undefined' &&
+        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+          navigator.userAgent
+        );
+
+      // Sur mobile (notamment Android Chrome), continuous = true déclenche le bogue connu
+      // où Chromium duplique chaque mot ou phrase 10 fois dans e.results.
+      // On désactive continuous sur mobile et on utilise le traitement propre avec e.resultIndex !
+      rec.continuous = !isMobile;
       rec.interimResults = true;
       rec.lang = 'fr-FR';
 
@@ -297,18 +308,41 @@ export default function ZeroWaitReview({
         setIsListening(true);
         setAudioError(null);
         transcriptRef.current = '';
+        accumulatedFinalRef.current = '';
         setTranscript('');
         // Laisse jusqu'à 7s au départ pour commencer à parler
         resetSilenceTimer(7000);
       };
 
       rec.onresult = (e: any) => {
-        let currentText = '';
-        for (let i = 0; i < e.results.length; i++) {
-          currentText += e.results[i][0].transcript;
+        let finalChunk = '';
+        let interimChunk = '';
+
+        // Utiliser e.resultIndex au lieu de 0 pour ne JAMAIS concaténer les événements passés en boucle
+        for (let i = e.resultIndex; i < e.results.length; ++i) {
+          const item = e.results[i];
+          const text = item[0]?.transcript || '';
+          if (item.isFinal) {
+            finalChunk += ' ' + text;
+          } else {
+            interimChunk += ' ' + text;
+          }
         }
-        transcriptRef.current = currentText;
-        setTranscript(currentText);
+
+        if (finalChunk.trim()) {
+          accumulatedFinalRef.current = (
+            accumulatedFinalRef.current +
+            ' ' +
+            finalChunk
+          ).trim();
+        }
+
+        const rawCombined = (accumulatedFinalRef.current + ' ' + interimChunk).trim();
+        const cleaned = cleanRepeatedPhrases(rawCombined);
+
+        transcriptRef.current = cleaned;
+        setTranscript(cleaned);
+
         // Dès qu'on entend des mots, on attend 2.5 secondes de silence complet avant de valider
         resetSilenceTimer(2500);
       };
@@ -325,10 +359,13 @@ export default function ZeroWaitReview({
           clearTimeout(silenceTimerRef.current);
         }
         setIsListening(false);
-        const finalPhrase = transcriptRef.current.trim();
+        const finalPhrase = cleanRepeatedPhrases(
+          (accumulatedFinalRef.current || transcriptRef.current).trim()
+        );
         if (finalPhrase) {
           handleApplyVoice(finalPhrase);
           transcriptRef.current = '';
+          accumulatedFinalRef.current = '';
           setTranscript('');
         }
       };

@@ -11,6 +11,7 @@
 
 import { matchVoiceInstruction } from '../src/lib/voiceMatcher';
 import { calculateBalances } from '../src/lib/balanceCalculator';
+import { cleanRepeatedPhrases } from '../src/lib/audioRecorder';
 import { ExpenseItem, Member, Expense, Settlement } from '../src/types';
 
 // ==========================================
@@ -939,6 +940,47 @@ suite('16. Calculateur de Soldes : Répartitions Flexibles & Sur-Mesure', () => 
     result.balances.forEach((b) => {
       assertEqual(b.netBalance, 0, `Solde net de ${b.member.name} = 0€`);
     });
+  });
+});
+
+// =========================================================================
+// SUITE 17 : ANTI-RÉPÉTITION VOCALE & DÉDUPLICATION (BOGUE ANDROID CHROME)
+// =========================================================================
+suite('17. Anti-Répétition Vocale & Déduplication (Android Chrome Bug)', () => {
+  test('Répétition 10x de la même phrase -> Dédupliquée en une seule phrase propre', () => {
+    const repeated = 'Garde pour moi les chips Garde pour moi les chips Garde pour moi les chips Garde pour moi les chips Garde pour moi les chips Garde pour moi les chips Garde pour moi les chips Garde pour moi les chips Garde pour moi les chips Garde pour moi les chips';
+    const cleaned = cleanRepeatedPhrases(repeated);
+    assertEqual(cleaned, 'Garde pour moi les chips', 'Doit réduire les 10 répétitions à 1 seule instance');
+  });
+
+  test('Répétition globale avec ponctuation ("Phrase A. Phrase A.")', () => {
+    const repeated = 'Garde pour moi le paquet de biscuits. Garde pour moi le paquet de biscuits.';
+    const cleaned = cleanRepeatedPhrases(repeated);
+    assertEqual(cleaned, 'Garde pour moi le paquet de biscuits.', 'Doit supprimer la phrase en double avec ponctuation');
+  });
+
+  test('Deux phrases différentes prononcées -> Les 2 phrases sont conservées sans altération', () => {
+    const normal = 'Garde pour moi les chips et le gel douche pour la coloc';
+    const cleaned = cleanRepeatedPhrases(normal);
+    assertEqual(cleaned, normal, 'Ne doit rien altérer quand il n\'y a pas de répétition');
+  });
+
+  test('Bogue d\'écho sur mots consécutifs ("gel gel gel douche douche")', () => {
+    const stutter = 'gel gel gel douche douche';
+    const cleaned = cleanRepeatedPhrases(stutter);
+    assertEqual(cleaned, 'gel douche', 'Doit éliminer les mots répétés consécutifs');
+  });
+
+  test('Deux phrases distinctes dupliquées consécutivement ("A et B A et B")', () => {
+    const repeated = 'Garde les chips et le coca Garde les chips et le coca';
+    const cleaned = cleanRepeatedPhrases(repeated);
+    assertEqual(cleaned, 'Garde les chips et le coca', 'Doit éliminer le doublon des deux phrases combinées');
+  });
+
+  test('Phrases vides ou espaces multiples', () => {
+    assertEqual(cleanRepeatedPhrases(''), '', 'Chaîne vide reste vide');
+    assertEqual(cleanRepeatedPhrases('   '), '', 'Espaces restent vides');
+    assertEqual(cleanRepeatedPhrases('coca'), 'coca', 'Mot unique préservé');
   });
 });
 
