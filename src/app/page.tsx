@@ -5,6 +5,7 @@ import { useProfile } from '@/context/ProfileContext';
 import { Member, Expense, MemberBalance, Debt, ExtractedReceipt } from '@/types';
 import ZeroWaitReview from '@/components/ZeroWaitReview';
 import ManualExpenseModal from '@/components/ManualExpenseModal';
+import ExpenseHistory from '@/components/ExpenseHistory';
 import {
   Camera,
   Upload,
@@ -252,69 +253,22 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Onglet 1 : Dépenses */}
+          {/* Onglet 1 : Dépenses avec détail complet de chaque achat */}
           {activeTab === 'expenses' && (
-            <div className="space-y-3">
-              {expenses.length === 0 ? (
-                <div className="py-12 text-center rounded-2xl bg-gray-50/80 border border-dashed border-gray-200 space-y-1">
-                  <Receipt className="h-8 w-8 mx-auto text-gray-300" />
-                  <p className="text-xs font-bold text-gray-600">Aucune dépense enregistrée</p>
-                  <p className="text-[11px] text-gray-400">
-                    Prenez en photo votre premier ticket de courses !
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {expenses.map((e) => (
-                    <div
-                      key={e.id}
-                      className="flex items-center justify-between rounded-2xl border border-gray-100 bg-white p-3.5 shadow-sm"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-xl">
-                          {e.payer.avatar}
-                        </span>
-                        <div>
-                          <div className="text-xs sm:text-sm font-bold text-gray-900">
-                            {e.store || e.title}
-                          </div>
-                          <div className="text-[11px] text-gray-400">
-                            Par {e.payer.name} • {new Date(e.date).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
-                          </div>
-                        </div>
-                      </div>
+            <div className="space-y-4">
+              <ExpenseHistory expenses={expenses} onExpenseDeleted={fetchData} />
 
-                      <div className="text-right">
-                        <div className="text-xs sm:text-sm font-black text-gray-900">
-                          {e.totalAmount.toFixed(2)} €
-                        </div>
-                        <div className="flex gap-1 justify-end mt-0.5">
-                          <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-                            Coloc: {e.colocAmount.toFixed(2)}€
-                          </span>
-                          {e.persoAmount > 0 && (
-                            <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">
-                              Perso: {e.persoAmount.toFixed(2)}€
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-
-                  {expenses.length > 0 && (
-                    <div className="pt-4 text-center">
-                      <button
-                        type="button"
-                        onClick={handleClearAll}
-                        disabled={clearing}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gray-400 hover:text-rose-600 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        {clearing ? 'Nettoyage...' : 'Réinitialiser toutes les dépenses'}
-                      </button>
-                    </div>
-                  )}
+              {expenses.length > 0 && (
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={handleClearAll}
+                    disabled={clearing}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gray-400 hover:text-rose-600 transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {clearing ? 'Nettoyage...' : 'Réinitialiser toutes les dépenses'}
+                  </button>
                 </div>
               )}
             </div>
@@ -330,14 +284,19 @@ export default function Home() {
                 {balances.map((b) => (
                   <div
                     key={b.member.id}
-                    className="flex items-center justify-between py-1.5 text-xs"
+                    className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0 text-xs"
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="text-lg">{b.member.avatar}</span>
-                      <span className="font-bold text-gray-800">{b.member.name}</span>
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl">{b.member.avatar}</span>
+                      <div>
+                        <span className="font-bold text-gray-800 block text-xs sm:text-sm">{b.member.name}</span>
+                        <span className="text-[11px] text-gray-400 font-semibold block">
+                          Payé : {b.totalPaid.toFixed(2)} € • Part : {b.totalShare.toFixed(2)} €
+                        </span>
+                      </div>
                     </div>
                     <span
-                      className={`font-black px-2 py-0.5 rounded-full ${
+                      className={`font-black px-2.5 py-1 rounded-full text-xs ${
                         b.netBalance > 0.01
                           ? 'bg-emerald-100 text-emerald-800'
                           : b.netBalance < -0.01
