@@ -101,13 +101,16 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
             setCurrentColocState(colocData);
             await refreshMembers(colocData.id);
             return;
+          } else {
+            // Colocation introuvable dans la base (ex: après réinitialisation)
+            localStorage.removeItem('coloc_active_coloc_id');
           }
         } catch (e) {
           console.error('Erreur restauration coloc:', e);
         }
       }
 
-      // Si aucune coloc en mémoire, ouvrir le modal d'onboarding
+      // Si aucune coloc valide en mémoire, ouvrir le modal d'onboarding
       setIsPickerOpen(true);
     };
 
