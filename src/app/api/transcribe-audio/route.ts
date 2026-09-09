@@ -21,38 +21,67 @@ export async function POST(request: Request) {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey || apiKey.trim() === '') {
+    const rawKey = process.env.GEMINI_API_KEY || '';
+    const apiKey = rawKey.replace(/^["']|["']$/g, '').trim();
+    if (!apiKey) {
       return NextResponse.json(
         { error: 'Clé API Gemini absente du serveur (.env.local)' },
         { status: 500 }
       );
     }
 
-    const cleanBase64 = audioBase64.replace(/^data:[^;]+;base64,/, '').trim();
+    // Nettoyage rigoureux : retirer le préfixe data URL même avec paramètres (;codecs=opus) et les espaces
+    const cleanBase64 = audioBase64.replace(/^data:[^,]+,/, '').replace(/\s+/g, '');
     if (!cleanBase64) {
       return NextResponse.json({ text: '' });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey.trim());
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-3.6-flash',
-      generationConfig: {
-        temperature: 0.1,
-      },
-    });
+    // Retirer les paramètres du type MIME (ex: ;codecs=opus -> audio/webm ou audio/ogg)
+    const pureMimeType = (mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm';
 
-    const result = await model.generateContent([
-      PROMPT_TRANSCRIBE,
-      {
-        inlineData: {
-          data: cleanBase64,
-          mimeType: mimeType || 'audio/webm',
-        },
-      },
-    ]);
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const candidateModels = [
+      'gemini-3.6-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-flash',
+      'gemini-2.0-flash',
+    ];
 
-    let text = result.response.text().trim();
+    let lastError: any = null;
+    let rawText = '';
+
+    for (const modelName of candidateModels) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: modelName,
+          generationConfig: {
+            temperature: 0.1,
+          },
+        });
+
+        const result = await model.generateContent([
+          PROMPT_TRANSCRIBE,
+          {
+            inlineData: {
+              data: cleanBase64,
+              mimeType: pureMimeType,
+            },
+          },
+        ]);
+
+        rawText = result.response.text().trim();
+        break;
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Tentative transcription audio Gemini ${modelName} échouée:`, err.message || err);
+      }
+    }
+
+    if (!rawText && lastError) {
+      throw lastError;
+    }
+
+    let text = rawText.trim();
     if (
       (text.startsWith('"') && text.endsWith('"')) ||
       (text.startsWith('«') && text.endsWith('»'))
@@ -67,8 +96,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ text });
   } catch (error: any) {
     console.error('Erreur API transcribe-audio:', error);
+    const rawMsg = String(error?.message || '');
+
+    let userFacingMessage = "Impossible de transcrire cet enregistrement audio.";
+    if (rawMsg.includes('API key') || rawMsg.includes('API_KEY_INVALID')) {
+      userFacingMessage = "Clé API Gemini invalide ou expirée.";
+    } else if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED')) {
+      userFacingMessage = "Quota de transcription vocale temporairement atteint. Réessayez dans une minute.";
+    }
+
     return NextResponse.json(
-      { error: error?.message || 'Erreur lors de la transcription audio' },
+      { error: userFacingMessage },
       { status: 500 }
     );
   }

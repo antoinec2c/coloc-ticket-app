@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import { ExtractedReceipt } from '@/types';
+import { useProfile } from '@/context/ProfileContext';
 import {
   Camera,
   Upload,
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export default function ReceiptUploader({ onExtracted, onManualMode }: Props) {
+  const { apiKey } = useProfile();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>('image/jpeg');
@@ -106,6 +108,7 @@ export default function ReceiptUploader({ onExtracted, onManualMode }: Props) {
         body: JSON.stringify({
           fileBase64: base64ToSend,
           mimeType: mimeType || 'image/jpeg',
+          apiKey: apiKey || undefined,
         }),
       });
 
@@ -247,9 +250,19 @@ export default function ReceiptUploader({ onExtracted, onManualMode }: Props) {
           </button>
 
           {errorMsg && (
-            <div className="flex items-center gap-2 rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200">
-              <AlertCircle className="h-4 w-4 shrink-0" />
-              <span>{errorMsg}</span>
+            <div className="flex items-start justify-between gap-2 rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 break-words min-w-0">
+              <div className="flex items-start gap-2 min-w-0">
+                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                <span className="break-words">{errorMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setErrorMsg(null)}
+                className="text-rose-500 hover:text-rose-800 font-bold px-1 shrink-0"
+                title="Fermer"
+              >
+                ✕
+              </button>
             </div>
           )}
         </div>

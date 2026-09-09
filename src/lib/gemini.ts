@@ -14,44 +14,77 @@ Renvoie UNIQUEMENT un JSON strict avec ce schéma :
 }
 Extrais tous les articles, quantités, prix unitaires et totaux. Déduis les remises éventuelles.`;
 
+const CANDIDATE_MODELS = [
+  'gemini-3.6-flash',
+  'gemini-2.5-flash',
+  'gemini-1.5-flash',
+  'gemini-2.0-flash',
+];
+
 export async function parseReceiptWithGemini(
   fileBase64: string,
   mimeType: string,
   apiKey?: string,
   isDemo?: boolean
 ): Promise<ExtractedReceipt> {
-  const key = apiKey || process.env.GEMINI_API_KEY;
+  const rawKey = apiKey || process.env.GEMINI_API_KEY || '';
+  const key = rawKey.replace(/^["']|["']$/g, '').trim();
 
-  if (!key || key.trim() === '') {
-    throw new Error("Clé API Gemini absente du serveur (.env.local).");
+  if (!key) {
+    throw new Error("NO_API_KEY: Clé API Gemini absente du serveur (.env.local).");
   }
 
-  const genAI = new GoogleGenerativeAI(key.trim());
-  const cleanBase64 = fileBase64.replace(/^data:[^;]+;base64,/, '');
+  const genAI = new GoogleGenerativeAI(key);
 
-  // Modèle ultra-rapide
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-3.6-flash',
-    generationConfig: {
-      temperature: 0.1,
-      responseMimeType: 'application/json',
-    },
-  });
+  // Nettoyer rigoureusement le base64 (retirer tout préfixe data:..., les paramètres type codecs, et les espaces/retours chariot)
+  const cleanBase64 = fileBase64.replace(/^data:[^,]+,/, '').replace(/\s+/g, '');
+  if (!cleanBase64) {
+    throw new Error("Contenu de l'image vide ou corrompu.");
+  }
 
-  const result = await model.generateContent([
-    PROMPT_FAST_EXTRACTION,
-    {
-      inlineData: {
-        data: cleanBase64,
-        mimeType: mimeType || 'image/jpeg',
-      },
-    },
-  ]);
+  // Normaliser le type MIME (retirer d'éventuels paramètres comme ;charset=utf-8)
+  const pureMimeType = (mimeType || 'image/jpeg').split(';')[0].trim() || 'image/jpeg';
 
-  const responseText = result.response.text();
+  let lastError: any = null;
+  let responseText = '';
+
+  for (const modelName of CANDIDATE_MODELS) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json',
+        },
+      });
+
+      const result = await model.generateContent([
+        PROMPT_FAST_EXTRACTION,
+        {
+          inlineData: {
+            data: cleanBase64,
+            mimeType: pureMimeType,
+          },
+        },
+      ]);
+
+      responseText = result.response.text();
+      if (responseText) {
+        break; // Succès avec ce modèle
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`Tentative modèle Gemini ${modelName} échouée:`, err.message || err);
+    }
+  }
+
+  if (!responseText) {
+    throw lastError || new Error("Impossible de lire les données du ticket.");
+  }
+
   const jsonMatch = responseText.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error("Impossible de lire les données du ticket.");
+    throw new Error("Format de réponse IA invalide (JSON introuvable).");
   }
 
   const parsed = JSON.parse(jsonMatch[0]) as ExtractedReceipt;

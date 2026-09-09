@@ -18,15 +18,25 @@ export async function POST(request: Request) {
     return NextResponse.json(receipt);
   } catch (error: any) {
     console.error('Erreur API scan-receipt:', error);
-    const msg = error?.message || 'Erreur lors de l\'analyse du ticket';
-    const isNoKey = msg.includes('NO_API_KEY');
+    const rawMsg = String(error?.message || '');
+    const isNoKey = rawMsg.includes('NO_API_KEY') || rawMsg.includes('API key not valid') || rawMsg.includes('API_KEY_INVALID');
+
+    let userFacingMessage = "Impossible de déchiffrer ce ticket. Assurez-vous qu'il est bien net et éclairé, ou saisissez les articles manuellement.";
+    if (isNoKey) {
+      userFacingMessage = "Clé API Gemini absente ou invalide. Renseignez-la dans les Paramètres (⚙️) ou contactez l'administrateur.";
+    } else if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED')) {
+      userFacingMessage = "Quota de requêtes Gemini temporairement atteint. Veuillez patienter une minute avant de réessayer.";
+    } else if (rawMsg.includes('SAFETY') || rawMsg.includes('BLOCKED')) {
+      userFacingMessage = "L'image du ticket a été filtrée par les règles de sécurité. Essayez une autre photo.";
+    }
 
     return NextResponse.json(
       {
-        error: isNoKey ? 'NO_API_KEY' : msg,
-        message: msg.replace('NO_API_KEY: ', ''),
+        error: isNoKey ? 'NO_API_KEY' : 'SCAN_FAILED',
+        message: userFacingMessage,
       },
       { status: isNoKey ? 401 : 500 }
     );
   }
 }
+

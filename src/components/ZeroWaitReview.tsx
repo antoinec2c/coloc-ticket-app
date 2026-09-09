@@ -42,7 +42,7 @@ export default function ZeroWaitReview({
   onCancel,
   onSaved,
 }: Props) {
-  const { currentColoc, currentMember, members } = useProfile();
+  const { currentColoc, currentMember, members, apiKey } = useProfile();
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(!initialData && Boolean(imageFile));
@@ -120,48 +120,63 @@ export default function ZeroWaitReview({
   useEffect(() => {
     if (!imageFile) return;
 
+    const isPdf = imageFile.type === 'application/pdf';
     const objectUrl = URL.createObjectURL(imageFile);
-    setPreviewUrl(objectUrl);
+    setPreviewUrl(isPdf ? null : objectUrl);
 
     const processAndAnalyze = async () => {
       setIsAnalyzing(true);
       setErrorMsg(null);
 
       try {
-        // Redimensionnement rapide côté client Canvas (1024px, 0.75) -> fichier ~60Ko
-        const base64 = await new Promise<string>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => {
-            const MAX = 1024;
-            let w = img.width;
-            let h = img.height;
-            if (w > MAX || h > MAX) {
-              if (w > h) {
-                h = Math.round((h * MAX) / w);
-                w = MAX;
-              } else {
-                w = Math.round((w * MAX) / h);
-                w = MAX;
-              }
-            }
+        let base64 = '';
+        const mimeType = imageFile.type || 'image/jpeg';
 
-            const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext('2d')!;
-            ctx.drawImage(img, 0, 0, w, h);
-            resolve(canvas.toDataURL('image/jpeg', 0.75));
-          };
-          img.onerror = reject;
-          img.src = objectUrl;
-        });
+        if (isPdf) {
+          // Lecture directe pour les fichiers PDF
+          base64 = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve((e.target?.result as string) || '');
+            reader.onerror = reject;
+            reader.readAsDataURL(imageFile);
+          });
+        } else {
+          // Redimensionnement rapide côté client Canvas (1024px, 0.75) -> fichier ~60Ko
+          base64 = await new Promise<string>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+              const MAX = 1024;
+              let w = img.width;
+              let h = img.height;
+              if (w > MAX || h > MAX) {
+                if (w > h) {
+                  h = Math.round((h * MAX) / w);
+                  w = MAX;
+                } else {
+                  w = Math.round((w * MAX) / h);
+                  w = MAX;
+                }
+              }
+
+              const canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d')!;
+              ctx.drawImage(img, 0, 0, w, h);
+              resolve(canvas.toDataURL('image/jpeg', 0.75));
+            };
+            img.onerror = () => reject(new Error("Format d'image non supporté par le navigateur."));
+            img.src = objectUrl;
+          });
+        }
 
         const res = await fetch('/api/scan-receipt', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             fileBase64: base64,
-            mimeType: 'image/jpeg',
+            mimeType: mimeType || 'image/jpeg',
+            apiKey: apiKey || undefined,
           }),
         });
 
@@ -584,16 +599,17 @@ export default function ZeroWaitReview({
           <div className="space-y-2">
             {/* Bannière de diagnostic explicite pour Firefox / Samsung */}
             {audioError && (
-              <div className="rounded-xl bg-rose-50 p-3 text-xs text-rose-800 border border-rose-300 shadow-sm space-y-2">
+              <div className="rounded-xl bg-rose-50 p-3 text-xs text-rose-800 border border-rose-300 shadow-sm space-y-2 break-words min-w-0">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-start gap-2">
+                  <div className="flex items-start gap-2 min-w-0">
                     <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
-                    <span className="font-semibold">{audioError}</span>
+                    <span className="font-semibold break-words">{audioError}</span>
                   </div>
                   <button
                     type="button"
                     onClick={() => setAudioError(null)}
-                    className="text-rose-500 hover:text-rose-800 font-bold px-1"
+                    className="text-rose-500 hover:text-rose-800 font-bold px-1 shrink-0"
+                    title="Fermer"
                   >
                     ✕
                   </button>
@@ -667,9 +683,19 @@ export default function ZeroWaitReview({
 
       {/* ERREUR EVENTUELLE */}
       {errorMsg && (
-        <div className="rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 flex items-center gap-2">
-          <AlertCircle className="h-4 w-4 shrink-0" />
-          <span>{errorMsg}</span>
+        <div className="rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 flex items-start justify-between gap-2 break-words min-w-0">
+          <div className="flex items-start gap-2 min-w-0">
+            <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+            <span className="break-words">{errorMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setErrorMsg(null)}
+            className="text-rose-500 hover:text-rose-800 font-bold px-1 shrink-0"
+            title="Fermer"
+          >
+            ✕
+          </button>
         </div>
       )}
 
