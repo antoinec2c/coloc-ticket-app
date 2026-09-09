@@ -1,9 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Sparkles, Send, Volume2, CheckCircle, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, Sparkles, Send, Volume2, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { ExpenseItem } from '@/types';
 import { VoiceMatchResult } from '@/lib/voiceMatcher';
+import {
+  startAudioRecording,
+  transcribeAudioBlob,
+  ActiveRecordingSession,
+} from '@/lib/audioRecorder';
 
 interface Props {
   items: ExpenseItem[];
@@ -12,108 +17,122 @@ interface Props {
 
 export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
   const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [textInput, setTextInput] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSpeechSupported, setIsSpeechSupported] = useState(true);
   const recognitionRef = useRef<any>(null);
+  const recordingSessionRef = useRef<ActiveRecordingSession | null>(null);
 
+  // Nettoyage au démontage
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
-      setIsSpeechSupported(false);
-    }
+    return () => {
+      if (recordingSessionRef.current) {
+        recordingSessionRef.current.cancel();
+      }
+    };
   }, []);
 
-  // Déclencher l'écoute avec demande explicite de permission micro
+  // Déclencher l'écoute avec support universel (Web Speech API ou MediaRecorder pour Firefox/Samsung)
   const startListening = async () => {
     setErrorMessage(null);
     setFeedback(null);
     setTranscript('');
 
-    // Demander la permission audio nativement au navigateur
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // Arrêter immédiatement les pistes du stream de test pour libérer le micro
-        stream.getTracks().forEach((track) => track.stop());
-      }
-    } catch (err: any) {
-      console.warn('Erreur permission getUserMedia:', err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setErrorMessage(
-          'Microphone bloqué : veuillez autoriser le micro dans la barre d\'adresse de votre navigateur (icône cadenas ou caméra).'
-        );
-        return;
-      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-        setErrorMessage('Aucun microphone détecté sur cet appareil.');
-        return;
-      }
-    }
-
     const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      typeof window !== 'undefined' &&
+      ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
-    if (!SpeechRecognition) {
-      setIsSpeechSupported(false);
-      setErrorMessage(
-        'La reconnaissance vocale directe n\'est pas supportée par ce navigateur. Utilisez la saisie texte ci-dessous ou ouvrez sur Chrome / Safari mobile.'
-      );
-      return;
+    // 1. Tenter Web Speech API si supporté (Chrome, Edge, Safari, etc.)
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = 'fr-FR';
+
+        recognition.onstart = () => {
+          setIsListening(true);
+          setErrorMessage(null);
+        };
+
+        recognition.onresult = (event: any) => {
+          const current = event.results[0][0].transcript;
+          setTranscript(current);
+        };
+
+        recognition.onerror = (event: any) => {
+          console.warn('Speech recognition error:', event.error);
+          setIsListening(false);
+
+          if (event.error === 'not-allowed') {
+            setErrorMessage(
+              "Accès au micro refusé. Cliquez sur le cadenas ou bouclier à gauche de l'URL pour autoriser le microphone."
+            );
+          } else if (event.error === 'no-speech') {
+            setErrorMessage('Aucune parole détectée. Parlez bien distinctement face au micro.');
+          } else if (event.error === 'network') {
+            setErrorMessage('Erreur réseau de la reconnaissance. Utilisez la saisie texte ci-dessous.');
+          } else {
+            setErrorMessage(`Erreur micro (${event.error}). Vous pouvez utiliser la saisie texte ci-dessous.`);
+          }
+        };
+
+        recognition.onend = () => {
+          setIsListening(false);
+        };
+
+        recognitionRef.current = recognition;
+        recognition.start();
+        return;
+      } catch (err: any) {
+        console.warn('Échec SpeechRecognition, passage au fallback MediaRecorder:', err);
+      }
     }
 
+    // 2. Fallback universel MediaRecorder + Gemini Flash (Firefox sur Samsung / Android, etc.)
     try {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = true;
-      recognition.lang = 'fr-FR';
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        setErrorMessage(null);
-      };
-
-      recognition.onresult = (event: any) => {
-        const current = event.results[0][0].transcript;
-        setTranscript(current);
-      };
-
-      recognition.onerror = (event: any) => {
-        console.warn('Speech recognition error:', event.error);
-        setIsListening(false);
-
-        if (event.error === 'not-allowed') {
-          setErrorMessage(
-            'Accès au micro refusé. Cliquez sur le cadenas à gauche de l\'URL pour autoriser le microphone.'
-          );
-        } else if (event.error === 'no-speech') {
-          setErrorMessage('Aucune parole détectée. Parlez bien distinctement face au micro.');
-        } else if (event.error === 'network') {
-          setErrorMessage(
-            'Erreur réseau du service de dictée vocale. Utilisez le champ texte ci-dessous.'
-          );
-        } else {
-          setErrorMessage(`Erreur micro (${event.error}). Vous pouvez utiliser la saisie texte ci-dessous.`);
-        }
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-      };
-
-      recognitionRef.current = recognition;
-      recognition.start();
+      const session = await startAudioRecording();
+      recordingSessionRef.current = session;
+      setIsListening(true);
     } catch (err: any) {
-      console.error('Erreur démarrage recognition:', err);
+      console.warn('Erreur accès micro:', err);
       setIsListening(false);
-      setErrorMessage('Impossible de démarrer le micro. Utilisez la saisie texte ci-dessous.');
+      if (err.isPermissionDenied) {
+        setErrorMessage(
+          "Microphone bloqué dans Firefox. Veuillez autoriser le micro (cliquez sur le cadenas ou bouclier dans la barre d'adresse > Autorisations > Microphone > Autoriser)."
+        );
+      } else {
+        setErrorMessage(err.message || "Impossible d'accéder au microphone.");
+      }
     }
   };
 
-  const stopListening = () => {
+  const stopListening = async () => {
+    if (recordingSessionRef.current) {
+      const session = recordingSessionRef.current;
+      recordingSessionRef.current = null;
+      setIsListening(false);
+      setIsTranscribing(true);
+
+      try {
+        const { blob, mimeType } = await session.stop();
+        const text = await transcribeAudioBlob(blob, mimeType);
+        setIsTranscribing(false);
+        if (text) {
+          processCommand(text);
+        } else {
+          setErrorMessage('Aucun mot distinct détecté. Rapprochez-vous du micro ou utilisez la saisie ci-dessous.');
+        }
+      } catch (err: any) {
+        console.error('Erreur transcription audio:', err);
+        setIsTranscribing(false);
+        setErrorMessage(err.message || 'Erreur lors de la transcription audio.');
+      }
+      return;
+    }
+
     if (recognitionRef.current) {
       try {
         recognitionRef.current.stop();
@@ -203,19 +222,40 @@ export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
 
       {/* Message d'erreur diagnostic si le micro échoue */}
       {errorMessage && (
-        <div className="rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 flex items-start gap-2 animate-fadeIn">
-          <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-600" />
-          <div>
-            <span>{errorMessage}</span>
+        <div className="rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 space-y-2 animate-fadeIn">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-600" />
+              <span className="whitespace-pre-line">{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="text-rose-500 hover:text-rose-800 font-bold px-1"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="rounded-lg bg-white/90 p-2 text-[11px] text-gray-800 border border-rose-200">
+            <span className="font-bold text-rose-900">💡 Astuce Samsung / Android :</span> Vous pouvez aussi simplement toucher le champ texte ci-dessous et appuyer sur l'icône micro 🎙️ de votre clavier Samsung ou Gboard pour dicter directement !
           </div>
         </div>
       )}
 
-      {/* Transcription en direct ou exemple */}
+      {/* Transcription en direct, attente IA ou exemple */}
       {isListening ? (
         <div className="rounded-xl bg-white/95 p-3 text-xs text-gray-800 border border-emerald-300 animate-pulse flex items-center gap-2 shadow-inner">
           <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-ping" />
-          <span>Écoute en cours... <em>"{transcript || 'Dites par exemple : Garde pour moi le gel douche et les chocolats...'}"</em></span>
+          <span>
+            {transcript
+              ? `🎙️ « ${transcript} »`
+              : "Écoute en cours... Parlez à votre rythme puis appuyez sur Arrêter l'écoute."}
+          </span>
+        </div>
+      ) : isTranscribing ? (
+        <div className="rounded-xl bg-amber-50 p-3 text-xs font-bold text-amber-900 border border-amber-300 flex items-center gap-2 animate-pulse">
+          <Loader2 className="h-4 w-4 animate-spin text-amber-600 shrink-0" />
+          <span>Transcription de votre voix par l'IA en cours...</span>
         </div>
       ) : feedback ? (
         <div className="rounded-xl bg-emerald-100/90 p-3 text-xs font-semibold text-emerald-900 border border-emerald-300 flex items-center gap-2 animate-fadeIn">
@@ -266,6 +306,9 @@ export default function VoiceAssistant({ items, onItemsAllocated }: Props) {
           <span className="hidden sm:inline">Appliquer</span>
         </button>
       </form>
+      <p className="text-[10px] text-emerald-800/70 italic">
+        💡 Astuce Samsung / Android : Vous pouvez aussi dicter directement avec le micro de votre clavier.
+      </p>
     </div>
   );
 }

@@ -5,6 +5,11 @@ import { useProfile } from '@/context/ProfileContext';
 import { ExpenseItem, ExtractedReceipt } from '@/types';
 import { matchVoiceInstruction } from '@/lib/voiceMatcher';
 import {
+  startAudioRecording,
+  transcribeAudioBlob,
+  ActiveRecordingSession,
+} from '@/lib/audioRecorder';
+import {
   Mic,
   MicOff,
   CheckCircle2,
@@ -64,12 +69,15 @@ export default function ZeroWaitReview({
 
   // Gestion vocale en temps masqué
   const [isListening, setIsListening] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState('');
   const [voiceFeedback, setVoiceFeedback] = useState<string | null>(null);
   const [textInput, setTextInput] = useState('');
   const [saving, setSaving] = useState(false);
 
   const recognitionRef = useRef<any>(null);
+  const recordingSessionRef = useRef<ActiveRecordingSession | null>(null);
   const transcriptRef = useRef<string>('');
   const pendingPhrasesRef = useRef<string[]>([]);
   const itemsRef = useRef<ExpenseItem[]>(items);
@@ -234,12 +242,40 @@ export default function ZeroWaitReview({
   // Configuration Web Speech API avec mode continu et timer de silence généreux (2.5s)
   const silenceTimerRef = useRef<any>(null);
 
+  const stopMediaRecording = async () => {
+    if (!recordingSessionRef.current) return;
+    const session = recordingSessionRef.current;
+    recordingSessionRef.current = null;
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+    }
+    setIsListening(false);
+    setIsTranscribing(true);
+
+    try {
+      const { blob, mimeType } = await session.stop();
+      const text = await transcribeAudioBlob(blob, mimeType);
+      setIsTranscribing(false);
+      if (text) {
+        handleApplyVoice(text);
+      } else {
+        setVoiceFeedback('Aucun mot distinct détecté. Vous pouvez aussi taper votre consigne ci-dessous !');
+      }
+    } catch (err: any) {
+      console.error('Erreur transcription audio:', err);
+      setIsTranscribing(false);
+      setAudioError(err.message || "Erreur lors de la transcription de l'enregistrement.");
+    }
+  };
+
   const resetSilenceTimer = (delay = 2500) => {
     if (silenceTimerRef.current) {
       clearTimeout(silenceTimerRef.current);
     }
-    silenceTimerRef.current = setTimeout(() => {
-      if (recognitionRef.current) {
+    silenceTimerRef.current = setTimeout(async () => {
+      if (recordingSessionRef.current) {
+        await stopMediaRecording();
+      } else if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
         } catch (e) {}
@@ -259,6 +295,7 @@ export default function ZeroWaitReview({
 
       rec.onstart = () => {
         setIsListening(true);
+        setAudioError(null);
         transcriptRef.current = '';
         setTranscript('');
         // Laisse jusqu'à 7s au départ pour commencer à parler
@@ -298,25 +335,67 @@ export default function ZeroWaitReview({
 
       recognitionRef.current = rec;
     }
-  }, []);
 
-  // Déclencher / Arrêter écoute micro
-  const toggleListening = () => {
-    if (!recognitionRef.current) return;
-    if (isListening) {
+    return () => {
+      if (recordingSessionRef.current) {
+        recordingSessionRef.current.cancel();
+      }
       if (silenceTimerRef.current) {
         clearTimeout(silenceTimerRef.current);
       }
-      try {
-        recognitionRef.current.stop();
-      } catch (e) {}
+    };
+  }, []);
+
+  // Déclencher / Arrêter écoute micro (Web Speech API ou MediaRecorder universel pour Firefox)
+  const toggleListening = async () => {
+    setAudioError(null);
+
+    if (isListening) {
+      if (recordingSessionRef.current) {
+        await stopMediaRecording();
+      } else if (recognitionRef.current) {
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+        }
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      }
     } else {
       transcriptRef.current = '';
       setTranscript('');
+
+      const SpeechRecognition =
+        typeof window !== 'undefined' &&
+        ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+      // Si le navigateur supporte Web Speech API (Chrome, Safari, etc.)
+      if (SpeechRecognition && recognitionRef.current) {
+        try {
+          recognitionRef.current.start();
+          return;
+        } catch (e) {
+          console.warn('SpeechRecognition inaccessible, passage au fallback MediaRecorder:', e);
+        }
+      }
+
+      // Fallback universel MediaRecorder + Gemini (Firefox sur Samsung / Android, etc.)
       try {
-        recognitionRef.current.start();
-      } catch (e) {
-        console.error(e);
+        const session = await startAudioRecording();
+        recordingSessionRef.current = session;
+        setIsListening(true);
+        // Arrêt automatique de sécurité après 12 secondes
+        resetSilenceTimer(12000);
+      } catch (err: any) {
+        console.warn('Erreur accès micro:', err);
+        setIsListening(false);
+        if (err.isPermissionDenied) {
+          setAudioError(
+            "Microphone bloqué dans Firefox. Veuillez autoriser le micro (cliquez sur le cadenas ou bouclier dans la barre d'adresse > Autorisations > Microphone > Autoriser)."
+          );
+        } else {
+          setAudioError(err.message || "Impossible d'accéder au microphone.");
+        }
       }
     }
   };
@@ -442,13 +521,13 @@ export default function ZeroWaitReview({
           </button>
         </div>
 
-        {/* Retranscription ou retour */}
+        {/* Retranscription, chargement IA ou retour */}
         {isListening ? (
           <div className="rounded-xl bg-white p-3 text-xs text-gray-800 border-2 border-emerald-400 shadow-sm flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 overflow-hidden flex-1">
               <span className="flex h-3 w-3 rounded-full bg-rose-500 animate-ping shrink-0" />
               <span className="font-bold text-gray-900 truncate">
-                {transcript ? `🎙️ « ${transcript} »` : '🎙️ Je vous écoute, parlez à votre rythme...'}
+                {transcript ? `🎙️ « ${transcript} »` : '🎙️ Enregistrement en cours... Parlez puis touchez Terminer.'}
               </span>
             </div>
             <button
@@ -456,11 +535,38 @@ export default function ZeroWaitReview({
               onClick={toggleListening}
               className="shrink-0 rounded-lg bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white shadow hover:bg-emerald-800 active:scale-95"
             >
-              Valider
+              Terminer
             </button>
+          </div>
+        ) : isTranscribing ? (
+          <div className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900 border-2 border-amber-300 shadow-sm flex items-center gap-2 animate-pulse">
+            <Loader2 className="h-4 w-4 animate-spin text-amber-600 shrink-0" />
+            <span className="font-bold">Transcription de votre voix par l'IA en cours...</span>
           </div>
         ) : (
           <div className="space-y-2">
+            {/* Bannière de diagnostic explicite pour Firefox / Samsung */}
+            {audioError && (
+              <div className="rounded-xl bg-rose-50 p-3 text-xs text-rose-800 border border-rose-300 shadow-sm space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                    <span className="font-semibold">{audioError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAudioError(null)}
+                    className="text-rose-500 hover:text-rose-800 font-bold px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="rounded-lg bg-white/90 p-2 text-[11px] text-gray-800 border border-rose-200">
+                  <span className="font-bold text-rose-900">💡 Astuce Samsung / Android :</span> Vous pouvez aussi simplement toucher le champ texte ci-dessous et appuyer sur le micro 🎙️ de votre clavier Samsung ou Gboard pour dicter directement !
+                </div>
+              </div>
+            )}
+
             {voiceFeedback && (
               <div className="rounded-xl bg-emerald-100 p-2.5 text-xs font-bold text-emerald-900 border border-emerald-300 flex items-center justify-between gap-1.5">
                 <div className="flex items-center gap-1.5">
@@ -494,11 +600,14 @@ export default function ZeroWaitReview({
               <button
                 type="submit"
                 disabled={!textInput.trim()}
-                className="rounded-xl bg-emerald-700 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-40"
+                className="rounded-xl bg-emerald-700 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-emerald-800 disabled:opacity-40"
               >
                 Appliquer
               </button>
             </form>
+            <p className="text-[10px] text-gray-500 italic">
+              💡 Astuce : Sur mobile, vous pouvez aussi dicter directement avec le micro de votre clavier.
+            </p>
           </div>
         )}
       </div>
