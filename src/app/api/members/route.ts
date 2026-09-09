@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
+import { prisma, getDbErrorMessage } from '@/lib/db';
 import { ensureDefaultData } from '@/lib/initDb';
 import { calculateBalances } from '@/lib/balanceCalculator';
 import { Member, Expense, Settlement } from '@/types';
@@ -117,10 +117,10 @@ export async function GET(request: Request) {
       debts,
       totalColocExpenses,
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erreur API members:', error);
     return NextResponse.json(
-      { error: 'Erreur lors de la récupération des membres et soldes' },
+      { error: getDbErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -145,10 +145,10 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(member, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erreur création membre:', error);
     return NextResponse.json(
-      { error: 'Erreur lors de la création du colocataire' },
+      { error: getDbErrorMessage(error) },
       { status: 500 }
     );
   }

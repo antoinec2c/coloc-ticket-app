@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
+import { prisma, getDbErrorMessage } from '@/lib/db';
 
 function generateColocCode(name: string): string {
   // Créer un préfixe lisible à partir du nom
@@ -64,10 +64,10 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json(colocs);
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erreur GET colocs:', error);
     return NextResponse.json(
-      { error: 'Erreur lors de la récupération des colocations' },
+      { error: getDbErrorMessage(error) },
       { status: 500 }
     );
   }
@@ -105,10 +105,10 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(coloc, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Erreur POST coloc:', error);
     return NextResponse.json(
-      { error: 'Erreur lors de la création de la colocation' },
+      { error: getDbErrorMessage(error) },
       { status: 500 }
     );
   }
