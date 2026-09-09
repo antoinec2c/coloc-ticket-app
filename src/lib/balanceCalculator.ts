@@ -32,16 +32,110 @@ export function calculateBalances(
 
   // Calculer l'impact de chaque dépense
   expenses.forEach((expense) => {
+    // Analyser splitDetails si présent
+    let split: any = null;
+    if (expense.splitDetails) {
+      if (typeof expense.splitDetails === 'string') {
+        try {
+          split = JSON.parse(expense.splitDetails);
+        } catch {
+          split = null;
+        }
+      } else if (typeof expense.splitDetails === 'object') {
+        split = expense.splitDetails;
+      }
+    }
+
+    // 1. Dépense 100% personnelle : aucun impact sur les comptes coloc
+    if (split?.type === 'personal') {
+      return;
+    }
+
+    // 2. Répartition pour un colocataire précis (avance directe)
+    if (split?.type === 'single_member' && split.targetMemberId) {
+      const amount = expense.colocAmount || expense.totalAmount || 0;
+      if (amount <= 0) return;
+
+      totalColocExpenses += amount;
+
+      const payerBal = memberMap.get(expense.payerId);
+      if (payerBal) {
+        payerBal.totalPaid += amount;
+      }
+
+      const targetBal = memberMap.get(split.targetMemberId);
+      if (targetBal) {
+        targetBal.totalShare += amount;
+      }
+      return;
+    }
+
+    // 3. Répartition personnalisée avec montants sur mesure par colocataire
+    if (split?.type === 'custom' && split.customAmounts) {
+      const customMap = split.customAmounts as Record<string, number>;
+      let customTotal = 0;
+      Object.entries(customMap).forEach(([mId, amt]) => {
+        const numAmt = Number(amt) || 0;
+        if (numAmt > 0) {
+          customTotal += numAmt;
+          const bal = memberMap.get(mId);
+          if (bal) {
+            bal.totalShare += numAmt;
+          }
+        }
+      });
+
+      const actualColocAmount = customTotal > 0 ? customTotal : (expense.colocAmount || 0);
+      totalColocExpenses += actualColocAmount;
+
+      const payerBal = memberMap.get(expense.payerId);
+      if (payerBal) {
+        payerBal.totalPaid += actualColocAmount;
+      }
+      return;
+    }
+
+    // 4. Répartition équitable sur un sous-ensemble de colocataires
+    if (split?.type === 'subset_equal' && Array.isArray(split.beneficiaryIds) && split.beneficiaryIds.length > 0) {
+      const colocPart = expense.colocAmount || 0;
+      if (colocPart <= 0) return;
+
+      totalColocExpenses += colocPart;
+
+      const payerBal = memberMap.get(expense.payerId);
+      if (payerBal) {
+        payerBal.totalPaid += colocPart;
+      }
+
+      const validBeneficiaries = split.beneficiaryIds.filter((id: string) => memberMap.has(id));
+      const count = validBeneficiaries.length > 0 ? validBeneficiaries.length : members.length;
+      const share = colocPart / count;
+
+      if (validBeneficiaries.length > 0) {
+        validBeneficiaries.forEach((id: string) => {
+          const bal = memberMap.get(id);
+          if (bal) bal.totalShare += share;
+        });
+      } else {
+        members.forEach((m) => {
+          const bal = memberMap.get(m.id);
+          if (bal) bal.totalShare += share;
+        });
+      }
+      return;
+    }
+
+    // 5. Cas standard / Rétrocompatibilité : répartition équitable entre tous les membres actifs
     const colocPart = expense.colocAmount || 0;
+    if (colocPart <= 0) return;
+
     totalColocExpenses += colocPart;
 
-    // Le payeur a avancé colocPart pour le groupe
     const payerBal = memberMap.get(expense.payerId);
     if (payerBal) {
       payerBal.totalPaid += colocPart;
     }
 
-    // Répartition équitable de la part coloc entre tous les membres actifs
     const sharePerMember = colocPart / members.length;
     members.forEach((m) => {
       const bal = memberMap.get(m.id);

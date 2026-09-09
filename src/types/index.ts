@@ -26,6 +26,15 @@ export interface ExpenseItem {
   category?: string;
 }
 
+export type SplitType = 'all_equal' | 'subset_equal' | 'custom' | 'single_member' | 'personal';
+
+export interface ExpenseSplit {
+  type: SplitType;
+  targetMemberId?: string;               // Pour 'single_member' (le colocataire qui doit rembourser)
+  beneficiaryIds?: string[];              // Pour filtrer les membres concernés ('subset_equal' ou sélection)
+  customAmounts?: Record<string, number>; // { [memberId: string]: number } pour montants sur-mesure
+}
+
 export interface Expense {
   id: string;
   title: string;
@@ -37,6 +46,7 @@ export interface Expense {
   fileType?: string | null; // "receipt_photo", "invoice_pdf", "manual"
   receiptImage?: string | null;
   notes?: string | null;
+  splitDetails?: string | ExpenseSplit | null;
   colocationId?: string | null;
   payerId: string;
   payer: Member;

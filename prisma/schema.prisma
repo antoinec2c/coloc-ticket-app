@@ -45,6 +45,7 @@ model Expense {
   fileType     String?       // "receipt_photo", "invoice_pdf", "manual"
   receiptImage String?       // Base64 ou data URI
   notes        String?
+  splitDetails String?       // Configuration JSON de la répartition (parts égales, unitaire, sur-mesure)
   createdAt    DateTime      @default(now())
 
   colocationId String?

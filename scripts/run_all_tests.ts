@@ -776,6 +776,172 @@ suite('15. Multi-Colocations : Isolation Stricte des Données', () => {
   });
 });
 
+// ----------------------------------------------------
+// SUITE 16 : CALCULATEUR DE SOLDES - RÉPARTITIONS FLEXIBLES
+// ----------------------------------------------------
+suite('16. Calculateur de Soldes : Répartitions Flexibles & Sur-Mesure', () => {
+  const alice: Member = { id: 'm-1', name: 'Alice', avatar: '👩', color: '#10B981' };
+  const bob: Member = { id: 'm-2', name: 'Bob', avatar: '👨', color: '#3B82F6' };
+  const charlie: Member = { id: 'm-3', name: 'Charlie', avatar: '🧑', color: '#F59E0B' };
+  const threeMembers = [alice, bob, charlie];
+
+  test('Avance directe pour un colocataire précis (single_member)', () => {
+    // Alice avance 15€ pour Bob (un déjeuner ou une bière)
+    const exp: Expense = {
+      id: 'e-single',
+      title: 'Déjeuner Bob',
+      totalAmount: 15,
+      colocAmount: 15,
+      persoAmount: 0,
+      date: '2026-09-09',
+      payerId: alice.id,
+      payer: alice,
+      splitDetails: JSON.stringify({
+        type: 'single_member',
+        targetMemberId: bob.id,
+      }),
+      items: [],
+    };
+
+    const result = calculateBalances(threeMembers, [exp], []);
+
+    assertEqual(result.totalColocExpenses, 15, 'Total coloc doit être 15€');
+
+    const balAlice = result.balances.find((b) => b.member.id === alice.id)!;
+    const balBob = result.balances.find((b) => b.member.id === bob.id)!;
+    const balCharlie = result.balances.find((b) => b.member.id === charlie.id)!;
+
+    assertEqual(balAlice.totalPaid, 15, 'Alice a payé 15€');
+    assertEqual(balAlice.totalShare, 0, 'Alice a 0€ de part (avance pour Bob)');
+    assertEqual(balAlice.netBalance, 15, 'Alice doit recevoir +15€');
+
+    assertEqual(balBob.totalPaid, 0, 'Bob a payé 0€');
+    assertEqual(balBob.totalShare, 15, 'Bob a 15€ de part');
+    assertEqual(balBob.netBalance, -15, 'Bob doit -15€');
+
+    assertEqual(balCharlie.totalPaid, 0, 'Charlie n\'a rien payé');
+    assertEqual(balCharlie.totalShare, 0, 'Charlie a 0€ de part');
+    assertEqual(balCharlie.netBalance, 0, 'Charlie n\'est pas impacté (solde = 0€)');
+
+    // Vérifier les dettes : seul Bob doit 15€ à Alice
+    assertEqual(result.debts.length, 1, 'Exactement 1 virement nécessaire');
+    assertEqual(result.debts[0].from.id, bob.id, 'Bob rembourse Alice');
+    assertEqual(result.debts[0].to.id, alice.id, 'Alice reçoit le remboursement');
+    assertEqual(result.debts[0].amount, 15, 'Montant du remboursement = 15€');
+  });
+
+  test('Répartition non équitable sur-mesure (custom)', () => {
+    // Alice paie 60€ : Alice 10€, Bob 20€, Charlie 30€
+    const exp: Expense = {
+      id: 'e-custom',
+      title: 'Courses sur-mesure',
+      totalAmount: 60,
+      colocAmount: 60,
+      persoAmount: 0,
+      date: '2026-09-09',
+      payerId: alice.id,
+      payer: alice,
+      splitDetails: {
+        type: 'custom',
+        customAmounts: {
+          [alice.id]: 10,
+          [bob.id]: 20,
+          [charlie.id]: 30,
+        },
+      },
+      items: [],
+    };
+
+    const result = calculateBalances(threeMembers, [exp], []);
+
+    assertEqual(result.totalColocExpenses, 60, 'Total dépenses = 60€');
+
+    const balAlice = result.balances.find((b) => b.member.id === alice.id)!;
+    const balBob = result.balances.find((b) => b.member.id === bob.id)!;
+    const balCharlie = result.balances.find((b) => b.member.id === charlie.id)!;
+
+    assertEqual(balAlice.totalShare, 10, 'Part Alice = 10€');
+    assertEqual(balAlice.netBalance, 50, 'Net Alice = +50€');
+
+    assertEqual(balBob.totalShare, 20, 'Part Bob = 20€');
+    assertEqual(balBob.netBalance, -20, 'Net Bob = -20€');
+
+    assertEqual(balCharlie.totalShare, 30, 'Part Charlie = 30€');
+    assertEqual(balCharlie.netBalance, -30, 'Net Charlie = -30€');
+
+    // Dettes simplifiées : Charlie doit 30€ à Alice, Bob doit 20€ à Alice
+    assertEqual(result.debts.length, 2, '2 virements requis');
+    const charlieDebt = result.debts.find((d) => d.from.id === charlie.id);
+    const bobDebt = result.debts.find((d) => d.from.id === bob.id);
+
+    assertEqual(charlieDebt?.amount, 30, 'Charlie doit 30€ à Alice');
+    assertEqual(bobDebt?.amount, 20, 'Bob doit 20€ à Alice');
+  });
+
+  test('Répartition sur une sélection de colocataires (subset_equal)', () => {
+    // Alice paie 40€ partagés équitablement uniquement entre Alice et Bob (Charlie n\'est pas là)
+    const exp: Expense = {
+      id: 'e-subset',
+      title: 'Pizza duo Alice & Bob',
+      totalAmount: 40,
+      colocAmount: 40,
+      persoAmount: 0,
+      date: '2026-09-09',
+      payerId: alice.id,
+      payer: alice,
+      splitDetails: {
+        type: 'subset_equal',
+        beneficiaryIds: [alice.id, bob.id],
+      },
+      items: [],
+    };
+
+    const result = calculateBalances(threeMembers, [exp], []);
+
+    const balAlice = result.balances.find((b) => b.member.id === alice.id)!;
+    const balBob = result.balances.find((b) => b.member.id === bob.id)!;
+    const balCharlie = result.balances.find((b) => b.member.id === charlie.id)!;
+
+    assertEqual(balAlice.totalShare, 20, 'Part Alice = 20€');
+    assertEqual(balAlice.netBalance, 20, 'Net Alice = +20€');
+
+    assertEqual(balBob.totalShare, 20, 'Part Bob = 20€');
+    assertEqual(balBob.netBalance, -20, 'Net Bob = -20€');
+
+    assertEqual(balCharlie.totalShare, 0, 'Charlie n\'est pas concerné = 0€');
+    assertEqual(balCharlie.netBalance, 0, 'Net Charlie = 0€');
+
+    assertEqual(result.debts.length, 1, '1 virement (Bob -> Alice : 20€)');
+    assertEqual(result.debts[0].from.id, bob.id, 'Bob doit payer');
+    assertEqual(result.debts[0].amount, 20, '20€ dus à Alice');
+  });
+
+  test('Dépense 100% personnelle (personal) sans impact coloc', () => {
+    const exp: Expense = {
+      id: 'e-perso',
+      title: 'Achat perso',
+      totalAmount: 50,
+      colocAmount: 0,
+      persoAmount: 50,
+      date: '2026-09-09',
+      payerId: alice.id,
+      payer: alice,
+      splitDetails: {
+        type: 'personal',
+      },
+      items: [],
+    };
+
+    const result = calculateBalances(threeMembers, [exp], []);
+
+    assertEqual(result.totalColocExpenses, 0, 'Total dépenses coloc = 0€');
+    assertEqual(result.debts.length, 0, 'Aucune dette générée');
+    result.balances.forEach((b) => {
+      assertEqual(b.netBalance, 0, `Solde net de ${b.member.name} = 0€`);
+    });
+  });
+});
+
 // ==========================================
 // RAPPORT FINAL D'EXÉCUTION
 // ==========================================

@@ -37,6 +37,7 @@ export async function POST(request: Request) {
       fileType,
       receiptImage,
       notes,
+      splitDetails,
       colocationId,
     } = body;
 
@@ -86,6 +87,11 @@ export async function POST(request: Request) {
         fileType: fileType || 'receipt_photo',
         receiptImage: receiptImage || null,
         notes: notes || null,
+        splitDetails: splitDetails
+          ? typeof splitDetails === 'string'
+            ? splitDetails
+            : JSON.stringify(splitDetails)
+          : null,
         colocationId: colocationId || null,
         payerId,
         items: {
