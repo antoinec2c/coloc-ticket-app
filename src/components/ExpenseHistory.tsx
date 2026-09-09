@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useProfile } from '@/context/ProfileContext';
 import { Expense } from '@/types';
 import {
   Receipt,
@@ -19,6 +20,7 @@ interface Props {
 }
 
 export default function ExpenseHistory({ expenses, onExpenseDeleted }: Props) {
+  const { members } = useProfile();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [filterMemberId, setFilterMemberId] = useState<string>('all');
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -93,6 +95,19 @@ export default function ExpenseHistory({ expenses, onExpenseDeleted }: Props) {
               month: 'short',
             });
 
+            let split: any = null;
+            if (expense.splitDetails) {
+              if (typeof expense.splitDetails === 'string') {
+                try {
+                  split = JSON.parse(expense.splitDetails);
+                } catch {
+                  split = null;
+                }
+              } else {
+                split = expense.splitDetails;
+              }
+            }
+
             return (
               <div
                 key={expense.id}
@@ -125,10 +140,20 @@ export default function ExpenseHistory({ expenses, onExpenseDeleted }: Props) {
                   </div>
 
                   <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <span className="rounded-lg bg-emerald-100 px-2 py-0.5 text-xs font-black text-emerald-800">
                         Coloc: {expense.colocAmount.toFixed(2)} €
                       </span>
+                      {split?.type === 'custom' && (
+                        <span className="rounded-lg bg-purple-100 px-2 py-0.5 text-[11px] font-bold text-purple-800">
+                          ⚖️ Sur-mesure
+                        </span>
+                      )}
+                      {split?.type === 'single_member' && (
+                        <span className="rounded-lg bg-blue-100 px-2 py-0.5 text-[11px] font-bold text-blue-800">
+                          👤 Avance
+                        </span>
+                      )}
                       {expense.persoAmount > 0 && (
                         <span className="rounded-lg bg-blue-100 px-2 py-0.5 text-xs font-bold text-blue-800">
                           Perso: {expense.persoAmount.toFixed(2)} €
@@ -150,12 +175,50 @@ export default function ExpenseHistory({ expenses, onExpenseDeleted }: Props) {
                   </div>
                 </div>
 
-                {/* Détail accordéon des articles */}
+                {/* Détail accordéon des articles et répartition */}
                 {isExpanded && (
                   <div className="border-t border-gray-200 bg-white p-3.5 space-y-3 animate-fadeIn">
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                      Détail des articles ({expense.items?.length || 0})
-                    </div>
+                    {/* Explication de la répartition */}
+                    {split && (
+                      <div className="rounded-xl bg-gray-50 p-2.5 border border-gray-200/80 text-xs space-y-1.5">
+                        <div className="font-bold text-[10px] uppercase tracking-wider text-gray-400">
+                          Répartition des parts
+                        </div>
+                        {split.type === 'custom' && split.customAmounts && (
+                          <div className="flex flex-wrap gap-1.5 pt-0.5">
+                            {Object.entries(split.customAmounts).map(([mId, amt]) => {
+                              const m = members.find((mem) => mem.id === mId);
+                              return (
+                                <span
+                                  key={mId}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 border border-gray-200 text-xs font-bold text-gray-800 shadow-2xs"
+                                >
+                                  <span>{m?.avatar || '👤'}</span>
+                                  <span>{m?.name || 'Coloc'} :</span>
+                                  <strong className="text-emerald-700">{Number(amt).toFixed(2)} €</strong>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {split.type === 'single_member' && (
+                          <div className="font-bold text-blue-900">
+                            💡 Avance directe de <strong>{expense.colocAmount.toFixed(2)} €</strong> pour{' '}
+                            <strong>{members.find((m) => m.id === split.targetMemberId)?.name || 'un colocataire'}</strong>.
+                          </div>
+                        )}
+                        {split.type === 'subset_equal' && (
+                          <div className="text-gray-700 font-semibold">
+                            💡 Répartition équitable entre les {split.beneficiaryIds?.length || 0} colocataires sélectionnés.
+                          </div>
+                        )}
+                        {split.type === 'personal' && (
+                          <div className="text-blue-800 font-semibold">
+                            💡 Dépense 100% personnelle (aucun impact sur les comptes).
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     <div className="divide-y divide-gray-100 max-h-56 overflow-y-auto">
                       {expense.items?.map((it) => (

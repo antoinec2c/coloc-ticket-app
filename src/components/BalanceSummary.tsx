@@ -122,10 +122,15 @@ export default function BalanceSummary({
               >
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{b.member.avatar}</span>
-                  <span className="text-xs font-bold text-gray-800">{b.member.name}</span>
+                  <div>
+                    <span className="text-xs font-bold text-gray-800 block">{b.member.name}</span>
+                    <span className="text-[10px] text-gray-400 font-semibold block">
+                      Payé : {b.totalPaid.toFixed(2)} € • Part : {b.totalShare.toFixed(2)} €
+                    </span>
+                  </div>
                 </div>
                 <div
-                  className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                  className={`text-xs font-black px-2 py-0.5 rounded-full shrink-0 ${
                     b.netBalance > 0.01
                       ? 'bg-emerald-100 text-emerald-800'
                       : b.netBalance < -0.01

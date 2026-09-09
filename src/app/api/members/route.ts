@@ -58,6 +58,7 @@ export async function GET(request: Request) {
       fileType: e.fileType,
       receiptImage: e.receiptImage,
       notes: e.notes,
+      splitDetails: e.splitDetails,
       colocationId: e.colocationId,
       payerId: e.payerId,
       payer: {
