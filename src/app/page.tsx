@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { Member, Expense, MemberBalance, Debt, ExtractedReceipt } from '@/types';
 import ZeroWaitReview from '@/components/ZeroWaitReview';
@@ -15,7 +15,7 @@ import {
 import confetti from 'canvas-confetti';
 
 export default function Home() {
-  const { currentMember } = useProfile();
+  const { currentColoc, currentMember } = useProfile();
 
   const [loading, setLoading] = useState(true);
   const [balances, setBalances] = useState<MemberBalance[]>([]);
@@ -34,11 +34,19 @@ export default function Home() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Charger les données
-  const fetchData = async () => {
+  // Charger les données de la colocation active
+  const fetchData = useCallback(async () => {
+    if (!currentColoc?.id) {
+      setBalances([]);
+      setDebts([]);
+      setExpenses([]);
+      setTotalColocExpenses(0);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const res = await fetch('/api/members');
+      const res = await fetch(`/api/members?colocId=${currentColoc.id}`);
       if (res.ok) {
         const data = await res.json();
         setBalances(data.balances || []);
@@ -51,11 +59,11 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentColoc?.id]);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [fetchData]);
 
   // Déclenchement dès qu'un fichier est sélectionné (appareil photo ou galerie)
   const handleFileSelected = (file: File) => {
@@ -99,7 +107,10 @@ export default function Home() {
     }
     setClearing(true);
     try {
-      const res = await fetch('/api/expenses?clearAll=true', { method: 'DELETE' });
+      const url = currentColoc?.id
+        ? `/api/expenses?clearAll=true&colocId=${currentColoc.id}`
+        : '/api/expenses?clearAll=true';
+      const res = await fetch(url, { method: 'DELETE' });
       if (res.ok) fetchData();
     } catch (e) {
       console.error(e);
@@ -118,6 +129,7 @@ export default function Home() {
           fromMemberId: debt.from.id,
           toMemberId: debt.to.id,
           amount: debt.amount,
+          colocationId: currentColoc?.id || null,
           notes: `Règlement de ${debt.from.name} à ${debt.to.name}`,
         }),
       });

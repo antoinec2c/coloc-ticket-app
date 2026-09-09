@@ -712,6 +712,70 @@ suite('14. Simulation Réaliste : Flux Zero-Wait & File Vocale', () => {
   });
 });
 
+suite('15. Multi-Colocations : Isolation Stricte des Données', () => {
+  test('Deux colocations indépendantes ne mélangent pas leurs soldes ni leurs dépenses', () => {
+    // Coloc A : Alice & Bob (Coloc Gambetta)
+    const alice: Member = { id: 'm-a1', name: 'Alice', avatar: '👩', color: '#10b981', colocationId: 'coloc-gambetta' };
+    const bob: Member = { id: 'm-b1', name: 'Bob', avatar: '👨', color: '#3b82f6', colocationId: 'coloc-gambetta' };
+
+    // Coloc B : Charlie & David (Coloc Les Lilas)
+    const charlie: Member = { id: 'm-c1', name: 'Charlie', avatar: '🦊', color: '#f59e0b', colocationId: 'coloc-lilas' };
+    const david: Member = { id: 'm-d1', name: 'David', avatar: '🐱', color: '#8b5cf6', colocationId: 'coloc-lilas' };
+
+    // Dépense Coloc A : Alice paie 40€ de courses partagées
+    const expA: Expense = {
+      id: 'e-a1',
+      title: 'Courses Gambetta',
+      totalAmount: 40,
+      colocAmount: 40,
+      persoAmount: 0,
+      date: new Date().toISOString(),
+      payerId: alice.id,
+      payer: alice,
+      colocationId: 'coloc-gambetta',
+      items: [{ id: 'i1', name: 'Courses', quantity: 1, unitPrice: 40, totalPrice: 40, isPersonal: false }],
+    };
+
+    // Dépense Coloc B : Charlie paie 100€ de courses partagées
+    const expB: Expense = {
+      id: 'e-b1',
+      title: 'Courses Lilas',
+      totalAmount: 100,
+      colocAmount: 100,
+      persoAmount: 0,
+      date: new Date().toISOString(),
+      payerId: charlie.id,
+      payer: charlie,
+      colocationId: 'coloc-lilas',
+      items: [{ id: 'i2', name: 'Courses', quantity: 1, unitPrice: 100, totalPrice: 100, isPersonal: false }],
+    };
+
+    // Calcul pour Coloc A
+    const resA = calculateBalances([alice, bob], [expA], []);
+    assertEqual(resA.totalColocExpenses, 40, 'Total dépenses Coloc A = 40€');
+    assertEqual(resA.debts.length, 1, '1 virement dû dans Coloc A');
+    assertEqual(resA.debts[0].from.name, 'Bob', 'Bob doit de l\'argent dans Coloc A');
+    assertEqual(resA.debts[0].to.name, 'Alice', 'Alice doit recevoir dans Coloc A');
+    assertEqual(resA.debts[0].amount, 20, 'Bob doit 20€ à Alice dans Coloc A');
+
+    // Calcul pour Coloc B
+    const resB = calculateBalances([charlie, david], [expB], []);
+    assertEqual(resB.totalColocExpenses, 100, 'Total dépenses Coloc B = 100€');
+    assertEqual(resB.debts.length, 1, '1 virement dû dans Coloc B');
+    assertEqual(resB.debts[0].from.name, 'David', 'David doit de l\'argent dans Coloc B');
+    assertEqual(resB.debts[0].to.name, 'Charlie', 'Charlie doit recevoir dans Coloc B');
+    assertEqual(resB.debts[0].amount, 50, 'David doit 50€ à Charlie dans Coloc B');
+
+    // Vérifier l\'absence totale de fuite de données
+    const namesA = resA.balances.map((b) => b.member.name);
+    const namesB = resB.balances.map((b) => b.member.name);
+    assert(!namesA.includes('Charlie'), 'Coloc A ne doit jamais contenir Charlie');
+    assert(!namesA.includes('David'), 'Coloc A ne doit jamais contenir David');
+    assert(!namesB.includes('Alice'), 'Coloc B ne doit jamais contenir Alice');
+    assert(!namesB.includes('Bob'), 'Coloc B ne doit jamais contenir Bob');
+  });
+});
+
 // ==========================================
 // RAPPORT FINAL D'EXÉCUTION
 // ==========================================

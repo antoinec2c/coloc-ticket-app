@@ -36,7 +36,7 @@ export default function ZeroWaitReview({
   onCancel,
   onSaved,
 }: Props) {
-  const { currentMember, members } = useProfile();
+  const { currentColoc, currentMember, members } = useProfile();
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(!initialData && Boolean(imageFile));
@@ -357,6 +357,7 @@ export default function ZeroWaitReview({
           date,
           payerId,
           items,
+          colocationId: currentColoc?.id || null,
           fileType: 'receipt_photo',
         }),
       });

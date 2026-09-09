@@ -4,15 +4,22 @@ import { ensureDefaultData } from '@/lib/initDb';
 import { calculateBalances } from '@/lib/balanceCalculator';
 import { Member, Expense, Settlement } from '@/types';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await ensureDefaultData();
 
+    const { searchParams } = new URL(request.url);
+    const colocId = searchParams.get('colocId') || request.headers.get('x-coloc-id') || undefined;
+
+    const whereClause = colocId ? { colocationId: colocId } : {};
+
     const members = await prisma.member.findMany({
+      where: whereClause,
       orderBy: { createdAt: 'asc' },
     });
 
     const expenses = await prisma.expense.findMany({
+      where: whereClause,
       include: {
         payer: true,
         items: true,
@@ -21,6 +28,7 @@ export async function GET() {
     });
 
     const settlements = await prisma.settlement.findMany({
+      where: whereClause,
       include: {
         fromMember: true,
         toMember: true,
@@ -35,6 +43,7 @@ export async function GET() {
       avatar: m.avatar,
       color: m.color,
       role: m.role,
+      colocationId: m.colocationId,
       createdAt: m.createdAt.toISOString(),
     }));
 
@@ -49,12 +58,14 @@ export async function GET() {
       fileType: e.fileType,
       receiptImage: e.receiptImage,
       notes: e.notes,
+      colocationId: e.colocationId,
       payerId: e.payerId,
       payer: {
         id: e.payer.id,
         name: e.payer.name,
         avatar: e.payer.avatar,
         color: e.payer.color,
+        colocationId: e.payer.colocationId,
       },
       items: e.items.map((i) => ({
         id: i.id,
@@ -73,12 +84,14 @@ export async function GET() {
       amount: s.amount,
       date: s.date.toISOString(),
       notes: s.notes,
+      colocationId: s.colocationId,
       fromMemberId: s.fromMemberId,
       fromMember: {
         id: s.fromMember.id,
         name: s.fromMember.name,
         avatar: s.fromMember.avatar,
         color: s.fromMember.color,
+        colocationId: s.fromMember.colocationId,
       },
       toMemberId: s.toMemberId,
       toMember: {
@@ -86,6 +99,7 @@ export async function GET() {
         name: s.toMember.name,
         avatar: s.toMember.avatar,
         color: s.toMember.color,
+        colocationId: s.toMember.colocationId,
       },
     }));
 
@@ -115,10 +129,10 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, avatar, color } = body;
+    const { name, avatar, color, colocationId } = body;
 
-    if (!name || name.trim() === '') {
-      return NextResponse.json({ error: 'Le nom est requis' }, { status: 400 });
+    if (!name || typeof name !== 'string' || name.trim() === '') {
+      return NextResponse.json({ error: 'Le prénom du colocataire est obligatoire' }, { status: 400 });
     }
 
     const member = await prisma.member.create({
@@ -126,6 +140,7 @@ export async function POST(request: Request) {
         name: name.trim(),
         avatar: avatar || '👤',
         color: color || '#3b82f6',
+        colocationId: colocationId || null,
       },
     });
 

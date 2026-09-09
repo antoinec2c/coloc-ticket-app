@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { fromMemberId, toMemberId, amount, notes } = body;
+    const { fromMemberId, toMemberId, amount, notes, colocationId } = body;
 
     if (!fromMemberId || !toMemberId || !amount || Number(amount) <= 0) {
       return NextResponse.json(
@@ -19,6 +19,7 @@ export async function POST(request: Request) {
         toMemberId,
         amount: Math.round(Number(amount) * 100) / 100,
         notes: notes || 'Remboursement pot commun',
+        colocationId: colocationId || null,
       },
       include: {
         fromMember: true,

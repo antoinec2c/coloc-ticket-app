@@ -1,9 +1,18 @@
+export interface Colocation {
+  id: string;
+  name: string;
+  code: string;
+  createdAt?: string;
+  members?: Member[];
+}
+
 export interface Member {
   id: string;
   name: string;
   avatar: string; // Emoji ou lettre
   color: string;  // Hex color pour badges et bordures
   role?: string;
+  colocationId?: string | null;
   createdAt?: string;
 }
 
@@ -28,6 +37,7 @@ export interface Expense {
   fileType?: string | null; // "receipt_photo", "invoice_pdf", "manual"
   receiptImage?: string | null;
   notes?: string | null;
+  colocationId?: string | null;
   payerId: string;
   payer: Member;
   items: ExpenseItem[];
@@ -39,6 +49,7 @@ export interface Settlement {
   amount: number;
   date: string;
   notes?: string | null;
+  colocationId?: string | null;
   fromMemberId: string;
   fromMember: Member;
   toMemberId: string;

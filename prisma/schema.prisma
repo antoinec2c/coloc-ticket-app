@@ -7,16 +7,30 @@ generator client {
   provider = "prisma-client-js"
 }
 
-model Member {
+model Colocation {
   id        String   @id @default(uuid())
   name      String
-  avatar    String   // emoji ou lettre
-  color     String   // code hex pour badges
-  role      String   @default("coloc")
+  code      String   @unique
   createdAt DateTime @default(now())
 
-  expensesPaid Expense[] @relation("PayerRelation")
-  settlementsSent Settlement[] @relation("SettlementFrom")
+  members     Member[]
+  expenses    Expense[]
+  settlements Settlement[]
+}
+
+model Member {
+  id           String      @id @default(uuid())
+  name         String
+  avatar       String      // emoji ou lettre
+  color        String      // code hex pour badges
+  role         String      @default("coloc")
+  createdAt    DateTime    @default(now())
+
+  colocationId String?
+  colocation   Colocation? @relation(fields: [colocationId], references: [id], onDelete: Cascade)
+
+  expensesPaid        Expense[]    @relation("PayerRelation")
+  settlementsSent     Settlement[] @relation("SettlementFrom")
   settlementsReceived Settlement[] @relation("SettlementTo")
 }
 
@@ -32,6 +46,9 @@ model Expense {
   receiptImage String?       // Base64 ou data URI
   notes        String?
   createdAt    DateTime      @default(now())
+
+  colocationId String?
+  colocation   Colocation?   @relation(fields: [colocationId], references: [id], onDelete: Cascade)
 
   payerId      String
   payer        Member        @relation("PayerRelation", fields: [payerId], references: [id], onDelete: Cascade)
@@ -53,14 +70,17 @@ model ExpenseItem {
 }
 
 model Settlement {
-  id           String   @id @default(uuid())
+  id           String      @id @default(uuid())
   amount       Float
-  date         DateTime @default(now())
+  date         DateTime    @default(now())
   notes        String?
 
+  colocationId String?
+  colocation   Colocation? @relation(fields: [colocationId], references: [id], onDelete: Cascade)
+
   fromMemberId String
-  fromMember   Member   @relation("SettlementFrom", fields: [fromMemberId], references: [id], onDelete: Cascade)
+  fromMember   Member      @relation("SettlementFrom", fields: [fromMemberId], references: [id], onDelete: Cascade)
 
   toMemberId   String
-  toMember     Member   @relation("SettlementTo", fields: [toMemberId], references: [id], onDelete: Cascade)
+  toMember     Member      @relation("SettlementTo", fields: [toMemberId], references: [id], onDelete: Cascade)
 }

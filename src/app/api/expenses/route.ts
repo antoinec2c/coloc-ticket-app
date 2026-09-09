@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const colocId = searchParams.get('colocId') || undefined;
+
     const expenses = await prisma.expense.findMany({
+      where: colocId ? { colocationId: colocId } : {},
       include: {
         payer: true,
         items: true,
@@ -33,6 +37,7 @@ export async function POST(request: Request) {
       fileType,
       receiptImage,
       notes,
+      colocationId,
     } = body;
 
     if (!title || !payerId || !items || !Array.isArray(items) || items.length === 0) {
@@ -81,6 +86,7 @@ export async function POST(request: Request) {
         fileType: fileType || 'receipt_photo',
         receiptImage: receiptImage || null,
         notes: notes || null,
+        colocationId: colocationId || null,
         payerId,
         items: {
           create: itemsToCreate,
@@ -107,12 +113,29 @@ export async function DELETE(request: Request) {
     const { searchParams } = new URL(request.url);
     const id = searchParams.get('id');
     const clearAll = searchParams.get('clearAll');
+    const colocId = searchParams.get('colocId') || undefined;
 
-    // Réinitialiser / vider toutes les dépenses
+    // Réinitialiser / vider toutes les dépenses (d'une coloc ou globales)
     if (clearAll === 'true') {
-      await prisma.expenseItem.deleteMany({});
-      await prisma.expense.deleteMany({});
-      await prisma.settlement.deleteMany({});
+      const whereClause = colocId ? { colocationId: colocId } : {};
+
+      // Supprimer les items associés
+      const expensesToDelete = await prisma.expense.findMany({
+        where: whereClause,
+        select: { id: true },
+      });
+      const expenseIds = expensesToDelete.map((e) => e.id);
+
+      await prisma.expenseItem.deleteMany({
+        where: { expenseId: { in: expenseIds } },
+      });
+      await prisma.expense.deleteMany({
+        where: whereClause,
+      });
+      await prisma.settlement.deleteMany({
+        where: whereClause,
+      });
+
       return NextResponse.json({ success: true, message: 'Toutes les dépenses ont été réinitialisées.' });
     }
 
