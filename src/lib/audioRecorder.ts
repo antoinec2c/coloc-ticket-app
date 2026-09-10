@@ -150,10 +150,19 @@ export function blobToBase64(blob: Blob): Promise<string> {
 /**
  * Envoie un Blob audio à l'API serveur pour transcription fidèle par Gemini Flash
  */
-export async function transcribeAudioBlob(blob: Blob, mimeType: string): Promise<string> {
+export async function transcribeAudioBlob(
+  blob: Blob,
+  mimeType: string,
+  apiKey?: string
+): Promise<string> {
   if (blob.size < 100) {
     return '';
   }
+
+  const effectiveApiKey =
+    apiKey ||
+    (typeof window !== 'undefined' ? localStorage.getItem('coloc_gemini_api_key') : '') ||
+    undefined;
 
   const base64 = await blobToBase64(blob);
   const response = await fetch('/api/transcribe-audio', {
@@ -162,6 +171,7 @@ export async function transcribeAudioBlob(blob: Blob, mimeType: string): Promise
     body: JSON.stringify({
       audioBase64: base64,
       mimeType,
+      apiKey: effectiveApiKey,
     }),
   });
 

@@ -28,6 +28,8 @@ export async function POST(request: Request) {
       userFacingMessage = "Vos crédits Google Gemini sont épuisés sur Google AI Studio. Rechargez vos crédits ou générez une clé gratuite sur aistudio.google.com et renseignez-la dans Paramètres (⚙️).";
     } else if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED')) {
       userFacingMessage = "Quota de requêtes Gemini temporairement atteint. Veuillez patienter une minute avant de réessayer.";
+    } else if (rawMsg.includes('503') || rawMsg.includes('high demand') || rawMsg.includes('Service Unavailable') || rawMsg.includes('Overloaded')) {
+      userFacingMessage = "Les serveurs Google Gemini subissent un pic de charge mondial temporaire (503). Patientez quelques secondes et réessayez.";
     } else if (rawMsg.includes('SAFETY') || rawMsg.includes('BLOCKED')) {
       userFacingMessage = "L'image du ticket a été filtrée par les règles de sécurité. Essayez une autre photo.";
     }

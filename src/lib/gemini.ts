@@ -16,10 +16,14 @@ Extrais tous les articles, quantités, prix unitaires et totaux. Déduis les rem
 
 const CANDIDATE_MODELS = [
   'gemini-3.6-flash',
-  'gemini-2.5-flash',
-  'gemini-1.5-flash',
-  'gemini-2.0-flash',
+  'gemini-3.7-flash',
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+  'gemini-flash-lite-latest',
+  'gemini-3.5-flash',
 ];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function parseReceiptWithGemini(
   fileBase64: string,
@@ -74,7 +78,11 @@ export async function parseReceiptWithGemini(
       }
     } catch (err: any) {
       lastError = err;
-      console.warn(`Tentative modèle Gemini ${modelName} échouée:`, err.message || err);
+      const errMsg = err?.message || String(err);
+      console.warn(`Tentative modèle Gemini ${modelName} échouée:`, errMsg);
+      if (errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('Overloaded')) {
+        await sleep(600);
+      }
     }
   }
 

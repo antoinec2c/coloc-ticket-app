@@ -12,6 +12,9 @@ import {
   AlertCircle,
   Loader2,
   Edit3,
+  RotateCcw,
+  Key,
+  Check,
 } from 'lucide-react';
 
 interface Props {
@@ -20,13 +23,14 @@ interface Props {
 }
 
 export default function ReceiptUploader({ onExtracted, onManualMode }: Props) {
-  const { apiKey } = useProfile();
+  const { apiKey, setApiKey } = useProfile();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [mimeType, setMimeType] = useState<string>('image/jpeg');
   const [rotation, setRotation] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [inlineKey, setInlineKey] = useState<string>('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -95,7 +99,7 @@ export default function ReceiptUploader({ onExtracted, onManualMode }: Props) {
     });
   };
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (customKey?: string) => {
     setLoading(true);
     setErrorMsg(null);
 
@@ -103,6 +107,7 @@ export default function ReceiptUploader({ onExtracted, onManualMode }: Props) {
       const base64ToSend = await getProcessedBase64();
 
       const effectiveApiKey =
+        customKey ||
         apiKey ||
         (typeof window !== 'undefined' ? localStorage.getItem('coloc_gemini_api_key') : '') ||
         undefined;
@@ -237,7 +242,7 @@ export default function ReceiptUploader({ onExtracted, onManualMode }: Props) {
           </div>
 
           <button
-            onClick={handleAnalyze}
+            onClick={() => handleAnalyze()}
             disabled={loading}
             className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 py-4 text-sm font-black text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 active:scale-[0.99] disabled:opacity-50 transition-all"
           >
@@ -255,19 +260,68 @@ export default function ReceiptUploader({ onExtracted, onManualMode }: Props) {
           </button>
 
           {errorMsg && (
-            <div className="flex items-start justify-between gap-2 rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 break-words min-w-0">
-              <div className="flex items-start gap-2 min-w-0">
-                <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
-                <span className="break-words">{errorMsg}</span>
+            <div className="rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 space-y-2.5 break-words min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2 min-w-0">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+                  <span className="break-words">{errorMsg}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setErrorMsg(null)}
+                  className="text-rose-500 hover:text-rose-800 font-bold px-1 shrink-0"
+                  title="Fermer"
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setErrorMsg(null)}
-                className="text-rose-500 hover:text-rose-800 font-bold px-1 shrink-0"
-                title="Fermer"
-              >
-                ✕
-              </button>
+
+              {/* Saisie rapide de la clé API si manquante ou expirée */}
+              {(errorMsg.includes('Clé API') || errorMsg.includes('crédits') || errorMsg.includes('NO_API_KEY')) && (
+                <div className="pt-1 space-y-1.5 bg-white/70 p-2.5 rounded-lg border border-rose-200">
+                  <p className="text-[11px] font-bold text-rose-800 flex items-center gap-1.5">
+                    <Key className="h-3.5 w-3.5 text-rose-600" />
+                    Collez votre clé Google Gemini ici :
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="password"
+                      placeholder="AQ.Ab8RN..."
+                      value={inlineKey}
+                      onChange={(e) => setInlineKey(e.target.value)}
+                      className="flex-1 bg-white border border-rose-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 font-mono placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const trimmed = inlineKey.trim();
+                        if (trimmed) {
+                          setApiKey(trimmed);
+                          handleAnalyze(trimmed);
+                        }
+                      }}
+                      disabled={!inlineKey.trim() || loading}
+                      className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm disabled:opacity-50 active:scale-95 transition-transform"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      Valider
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Bouton Réessayer */}
+              <div className="pt-0.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleAnalyze()}
+                  disabled={loading}
+                  className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Réessayer le scan
+                </button>
+              </div>
             </div>
           )}
         </div>

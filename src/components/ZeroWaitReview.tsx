@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useProfile } from '@/context/ProfileContext';
 import { ExpenseItem, ExtractedReceipt } from '@/types';
 import { matchVoiceInstruction } from '@/lib/voiceMatcher';
@@ -26,6 +26,8 @@ import {
   Check,
   AlertCircle,
   Square,
+  RotateCcw,
+  Key,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -42,11 +44,12 @@ export default function ZeroWaitReview({
   onCancel,
   onSaved,
 }: Props) {
-  const { currentColoc, currentMember, members, apiKey } = useProfile();
+  const { currentColoc, currentMember, members, apiKey, setApiKey } = useProfile();
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(!initialData && Boolean(imageFile));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [inlineKey, setInlineKey] = useState<string>('');
 
   const [store, setStore] = useState<string>(initialData?.store || 'Supermarché');
   const [date, setDate] = useState<string>(
@@ -116,21 +119,18 @@ export default function ZeroWaitReview({
     }
   };
 
-  // 1. DÉMARRER L'ANALYSE EN ARRIÈRE-PLAN DÈS LE MONTAGE
-  useEffect(() => {
-    if (!imageFile) return;
+  // 1. ANALYSER LE TICKET (réutilisable via bouton Réessayer)
+  const analyzeReceipt = useCallback(
+    async (customKey?: string) => {
+      if (!imageFile) return;
 
-    const isPdf = imageFile.type === 'application/pdf';
-    const objectUrl = URL.createObjectURL(imageFile);
-    setPreviewUrl(isPdf ? null : objectUrl);
-
-    const processAndAnalyze = async () => {
       setIsAnalyzing(true);
       setErrorMsg(null);
 
       try {
         let base64 = '';
         const mimeType = imageFile.type || 'image/jpeg';
+        const isPdf = imageFile.type === 'application/pdf';
 
         if (isPdf) {
           // Lecture directe pour les fichiers PDF
@@ -141,11 +141,11 @@ export default function ZeroWaitReview({
             reader.readAsDataURL(imageFile);
           });
         } else {
-          // Redimensionnement rapide côté client Canvas (1024px, 0.75) -> fichier ~60Ko
+          // Redimensionnement Canvas (1600px, 0.85) -> net et précis
           base64 = await new Promise<string>((resolve, reject) => {
             const img = new Image();
             img.onload = () => {
-              const MAX = 1024;
+              const MAX = 1600;
               let w = img.width;
               let h = img.height;
               if (w > MAX || h > MAX) {
@@ -154,7 +154,7 @@ export default function ZeroWaitReview({
                   w = MAX;
                 } else {
                   w = Math.round((w * MAX) / h);
-                  w = MAX;
+                  h = MAX;
                 }
               }
 
@@ -163,14 +163,15 @@ export default function ZeroWaitReview({
               canvas.height = h;
               const ctx = canvas.getContext('2d')!;
               ctx.drawImage(img, 0, 0, w, h);
-              resolve(canvas.toDataURL('image/jpeg', 0.75));
+              resolve(canvas.toDataURL('image/jpeg', 0.85));
             };
             img.onerror = () => reject(new Error("Format d'image non supporté par le navigateur."));
-            img.src = objectUrl;
+            img.src = previewUrl || URL.createObjectURL(imageFile);
           });
         }
 
         const effectiveApiKey =
+          customKey ||
           apiKey ||
           (typeof window !== 'undefined' ? localStorage.getItem('coloc_gemini_api_key') : '') ||
           undefined;
@@ -232,10 +233,20 @@ export default function ZeroWaitReview({
       } finally {
         setIsAnalyzing(false);
       }
-    };
+    },
+    [imageFile, previewUrl, apiKey]
+  );
 
-    processAndAnalyze();
-  }, [imageFile]);
+  // Déclencher l'analyse dès le montage si image présente
+  useEffect(() => {
+    if (!imageFile) return;
+
+    const isPdf = imageFile.type === 'application/pdf';
+    const objectUrl = URL.createObjectURL(imageFile);
+    setPreviewUrl(isPdf ? null : objectUrl);
+
+    analyzeReceipt();
+  }, [imageFile, analyzeReceipt]);
 
   // Sécurité réactive : appliquer toute consigne restante dès que items est non vide
   useEffect(() => {
@@ -688,19 +699,68 @@ export default function ZeroWaitReview({
 
       {/* ERREUR EVENTUELLE */}
       {errorMsg && (
-        <div className="rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 flex items-start justify-between gap-2 break-words min-w-0">
-          <div className="flex items-start gap-2 min-w-0">
-            <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
-            <span className="break-words">{errorMsg}</span>
+        <div className="rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 space-y-2.5 break-words min-w-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-start gap-2 min-w-0">
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+              <span className="break-words">{errorMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setErrorMsg(null)}
+              className="text-rose-500 hover:text-rose-800 font-bold px-1 shrink-0"
+              title="Fermer"
+            >
+              ✕
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setErrorMsg(null)}
-            className="text-rose-500 hover:text-rose-800 font-bold px-1 shrink-0"
-            title="Fermer"
-          >
-            ✕
-          </button>
+
+          {/* Saisie rapide de la clé API si manquante ou expirée */}
+          {(errorMsg.includes('Clé API') || errorMsg.includes('crédits') || errorMsg.includes('NO_API_KEY')) && (
+            <div className="pt-1 space-y-1.5 bg-white/70 p-2.5 rounded-lg border border-rose-200">
+              <p className="text-[11px] font-bold text-rose-800 flex items-center gap-1.5">
+                <Key className="h-3.5 w-3.5 text-rose-600" />
+                Collez votre clé Google Gemini ici :
+              </p>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="password"
+                  placeholder="AQ.Ab8RN..."
+                  value={inlineKey}
+                  onChange={(e) => setInlineKey(e.target.value)}
+                  className="flex-1 bg-white border border-rose-300 rounded-lg px-2.5 py-1.5 text-xs text-gray-800 font-mono placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const trimmed = inlineKey.trim();
+                    if (trimmed) {
+                      setApiKey(trimmed);
+                      analyzeReceipt(trimmed);
+                    }
+                  }}
+                  disabled={!inlineKey.trim() || isAnalyzing}
+                  className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1 shadow-sm disabled:opacity-50 active:scale-95 transition-transform"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  Valider
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Bouton Réessayer */}
+          <div className="pt-0.5 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => analyzeReceipt()}
+              disabled={isAnalyzing}
+              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Réessayer le scan
+            </button>
+          </div>
         </div>
       )}
 

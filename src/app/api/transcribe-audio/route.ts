@@ -12,7 +12,7 @@ RÈGLES IMPÉRATIVES :
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { audioBase64, mimeType } = body;
+    const { audioBase64, mimeType, apiKey: clientApiKey } = body;
 
     if (!audioBase64 || typeof audioBase64 !== 'string') {
       return NextResponse.json(
@@ -21,11 +21,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const rawKey = process.env.GEMINI_API_KEY || '';
+    const rawKey = clientApiKey || process.env.GEMINI_API_KEY || '';
     const apiKey = rawKey.replace(/^["']|["']$/g, '').trim();
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'Clé API Gemini absente du serveur (.env.local)' },
+        { error: 'Clé API Gemini absente. Renseignez-la dans Paramètres (⚙️).' },
         { status: 500 }
       );
     }
@@ -42,9 +42,10 @@ export async function POST(request: Request) {
     const genAI = new GoogleGenerativeAI(apiKey);
     const candidateModels = [
       'gemini-3.6-flash',
-      'gemini-2.5-flash',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash',
+      'gemini-3.7-flash',
+      'gemini-3.8-flash',
+      'gemini-flash-latest',
+      'gemini-flash-lite-latest',
     ];
 
     let lastError: any = null;
@@ -70,10 +71,16 @@ export async function POST(request: Request) {
         ]);
 
         rawText = result.response.text().trim();
-        break;
+        if (rawText !== undefined) {
+          break;
+        }
       } catch (err: any) {
         lastError = err;
-        console.warn(`Tentative transcription audio Gemini ${modelName} échouée:`, err.message || err);
+        const errMsg = err?.message || String(err);
+        console.warn(`Tentative transcription audio Gemini ${modelName} échouée:`, errMsg);
+        if (errMsg.includes('503') || errMsg.includes('high demand') || errMsg.includes('Overloaded')) {
+          await new Promise((r) => setTimeout(r, 600));
+        }
       }
     }
 
@@ -103,6 +110,8 @@ export async function POST(request: Request) {
       userFacingMessage = "Clé API Gemini invalide ou expirée.";
     } else if (rawMsg.includes('credits are depleted') || rawMsg.includes('prepayment credits')) {
       userFacingMessage = "Crédits Google Gemini épuisés sur votre compte Google AI Studio.";
+    } else if (rawMsg.includes('503') || rawMsg.includes('high demand') || rawMsg.includes('Service Unavailable') || rawMsg.includes('Overloaded')) {
+      userFacingMessage = "Serveurs vocaux Google Gemini temporairement occupés (503). Réessayez dans un instant.";
     } else if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED')) {
       userFacingMessage = "Quota de transcription vocale temporairement atteint. Réessayez dans une minute.";
     }
