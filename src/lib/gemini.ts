@@ -31,7 +31,7 @@ export async function parseReceiptWithGemini(
   const key = rawKey.replace(/^["']|["']$/g, '').trim();
 
   if (!key) {
-    throw new Error("NO_API_KEY: Clé API Gemini absente du serveur (.env.local).");
+    throw new Error("NO_API_KEY: Clé API Gemini absente.");
   }
 
   const genAI = new GoogleGenerativeAI(key);

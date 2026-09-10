@@ -102,13 +102,18 @@ export default function ReceiptUploader({ onExtracted, onManualMode }: Props) {
     try {
       const base64ToSend = await getProcessedBase64();
 
+      const effectiveApiKey =
+        apiKey ||
+        (typeof window !== 'undefined' ? localStorage.getItem('coloc_gemini_api_key') : '') ||
+        undefined;
+
       const res = await fetch('/api/scan-receipt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fileBase64: base64ToSend,
           mimeType: mimeType || 'image/jpeg',
-          apiKey: apiKey || undefined,
+          apiKey: effectiveApiKey,
         }),
       });
 

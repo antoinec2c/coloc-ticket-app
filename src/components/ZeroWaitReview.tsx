@@ -170,13 +170,18 @@ export default function ZeroWaitReview({
           });
         }
 
+        const effectiveApiKey =
+          apiKey ||
+          (typeof window !== 'undefined' ? localStorage.getItem('coloc_gemini_api_key') : '') ||
+          undefined;
+
         const res = await fetch('/api/scan-receipt', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             fileBase64: base64,
             mimeType: mimeType || 'image/jpeg',
-            apiKey: apiKey || undefined,
+            apiKey: effectiveApiKey,
           }),
         });
 

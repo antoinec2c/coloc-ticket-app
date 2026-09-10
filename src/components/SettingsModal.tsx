@@ -22,6 +22,12 @@ export default function SettingsModal({ onClose }: Props) {
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
+  React.useEffect(() => {
+    if (apiKey) {
+      setKeyInput(apiKey);
+    }
+  }, [apiKey]);
+
   const [newMemberName, setNewMemberName] = useState('');
   const [newMemberAvatar, setNewMemberAvatar] = useState('🍕');
   const [loadingMember, setLoadingMember] = useState(false);
