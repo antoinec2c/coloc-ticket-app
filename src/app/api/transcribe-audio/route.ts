@@ -101,6 +101,8 @@ export async function POST(request: Request) {
     let userFacingMessage = "Impossible de transcrire cet enregistrement audio.";
     if (rawMsg.includes('API key') || rawMsg.includes('API_KEY_INVALID')) {
       userFacingMessage = "Clé API Gemini invalide ou expirée.";
+    } else if (rawMsg.includes('credits are depleted') || rawMsg.includes('prepayment credits')) {
+      userFacingMessage = "Crédits Google Gemini épuisés sur votre compte Google AI Studio.";
     } else if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED')) {
       userFacingMessage = "Quota de transcription vocale temporairement atteint. Réessayez dans une minute.";
     }

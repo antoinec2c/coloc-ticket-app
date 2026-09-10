@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const apiKey = (process.env.GEMINI_API_KEY || '').replace(/^["']|["']$/g, '').trim();
+console.log("Using API key prefix:", apiKey.slice(0, 8), "len:", apiKey.length);
 const genAI = new GoogleGenerativeAI(apiKey);
 
 async function run() {
@@ -25,6 +26,4 @@ async function run() {
 }
 
 run();
-
-
 

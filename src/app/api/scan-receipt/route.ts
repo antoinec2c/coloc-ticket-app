@@ -24,6 +24,8 @@ export async function POST(request: Request) {
     let userFacingMessage = "Impossible de déchiffrer ce ticket. Assurez-vous qu'il est bien net et éclairé, ou saisissez les articles manuellement.";
     if (isNoKey) {
       userFacingMessage = "Clé API Gemini absente ou invalide. Renseignez-la dans les Paramètres (⚙️) ou contactez l'administrateur.";
+    } else if (rawMsg.includes('credits are depleted') || rawMsg.includes('prepayment credits')) {
+      userFacingMessage = "Vos crédits Google Gemini sont épuisés sur Google AI Studio. Rechargez vos crédits ou générez une clé gratuite sur aistudio.google.com et renseignez-la dans Paramètres (⚙️).";
     } else if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED')) {
       userFacingMessage = "Quota de requêtes Gemini temporairement atteint. Veuillez patienter une minute avant de réessayer.";
     } else if (rawMsg.includes('SAFETY') || rawMsg.includes('BLOCKED')) {
