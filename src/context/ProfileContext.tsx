@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { Member, Colocation } from '@/types';
 
 interface ProfileContextType {
@@ -31,8 +31,14 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [apiKey, setApiKeyState] = useState('');
 
+  const currentColocRef = useRef<Colocation | null>(null);
+  currentColocRef.current = currentColoc;
+
+  const currentMemberRef = useRef<Member | null>(null);
+  currentMemberRef.current = currentMember;
+
   const refreshMembers = useCallback(async (colocId?: string) => {
-    const targetColocId = colocId || currentColoc?.id;
+    const targetColocId = colocId || currentColocRef.current?.id;
     try {
       const url = targetColocId ? `/api/members?colocId=${targetColocId}` : '/api/members';
       const res = await fetch(url);
@@ -46,28 +52,41 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           if (savedMemberId) {
             const found = loadedMembers.find((m) => m.id === savedMemberId);
             if (found) {
-              setCurrentMemberState(found);
+              setCurrentMemberState((prev) => {
+                if (
+                  prev &&
+                  prev.id === found.id &&
+                  prev.name === found.name &&
+                  prev.avatar === found.avatar &&
+                  prev.color === found.color
+                ) {
+                  return prev;
+                }
+                return found;
+              });
               return;
             }
           }
         }
 
         // Si aucun profil valide sélectionné et des membres existent
-        if (!currentMember && loadedMembers.length > 0) {
+        if (!currentMemberRef.current && loadedMembers.length > 0) {
           setIsPickerOpen(true);
         }
       }
     } catch (err) {
       console.error('Erreur chargement membres:', err);
     }
-  }, [currentColoc?.id, currentMember]);
+  }, []);
 
-  // Initialisation : URL params & LocalStorage
+  // Initialisation : URL params & LocalStorage (exécutée une seule fois au montage)
   useEffect(() => {
+    let isMounted = true;
+
     const initApp = async () => {
       // 1. Clé API
       const savedKey = localStorage.getItem('coloc_gemini_api_key') || '';
-      setApiKeyState(savedKey);
+      if (isMounted) setApiKeyState(savedKey);
 
       // 2. Détection code d'invitation URL (?join=XYZ ou ?coloc=XYZ)
       const urlParams = new URLSearchParams(window.location.search);
@@ -76,14 +95,19 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       if (inviteCode) {
         try {
           const res = await fetch(`/api/colocs?code=${encodeURIComponent(inviteCode.trim())}`);
-          if (res.ok) {
+          if (res.ok && isMounted) {
             const colocData = await res.json();
-            setCurrentColocState(colocData);
+            setCurrentColocState((prev) => {
+              if (prev && prev.id === colocData.id && prev.code === colocData.code && prev.name === colocData.name) {
+                return prev;
+              }
+              return colocData;
+            });
             localStorage.setItem('coloc_active_coloc_id', colocData.id);
             // Nettoyer l'URL
             window.history.replaceState({}, '', window.location.pathname);
             await refreshMembers(colocData.id);
-            setIsPickerOpen(true);
+            if (isMounted) setIsPickerOpen(true);
             return;
           }
         } catch (e) {
@@ -96,12 +120,17 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       if (savedColocId) {
         try {
           const res = await fetch(`/api/colocs?id=${savedColocId}`);
-          if (res.ok) {
+          if (res.ok && isMounted) {
             const colocData = await res.json();
-            setCurrentColocState(colocData);
+            setCurrentColocState((prev) => {
+              if (prev && prev.id === colocData.id && prev.code === colocData.code && prev.name === colocData.name) {
+                return prev;
+              }
+              return colocData;
+            });
             await refreshMembers(colocData.id);
             return;
-          } else {
+          } else if (isMounted) {
             // Colocation introuvable dans la base (ex: après réinitialisation)
             localStorage.removeItem('coloc_active_coloc_id');
           }
@@ -111,10 +140,16 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Si aucune coloc valide en mémoire, ouvrir le modal d'onboarding
-      setIsPickerOpen(true);
+      if (isMounted) {
+        setIsPickerOpen(true);
+      }
     };
 
     initApp();
+
+    return () => {
+      isMounted = false;
+    };
   }, [refreshMembers]);
 
   const setCurrentColoc = (coloc: Colocation) => {

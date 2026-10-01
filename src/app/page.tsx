@@ -73,6 +73,8 @@ export default function Home() {
     setSelectedImage(file);
     setManualInitialData(null);
     setViewState('review');
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   // Saisie manuelle

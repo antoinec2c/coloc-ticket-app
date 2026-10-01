@@ -97,14 +97,32 @@ export async function parseReceiptWithGemini(
 
   const parsed = JSON.parse(jsonMatch[0]) as ExtractedReceipt;
 
-  parsed.items = (parsed.items || []).map((item) => ({
-    ...item,
-    quantity: Number(item.quantity) || 1,
-    unitPrice: Number(item.unitPrice) || Number(item.totalPrice) || 0,
-    totalPrice: Number(item.totalPrice) || 0,
-    isPersonal: false,
-    category: item.category || 'Alimentation',
-  }));
+  parsed.items = (parsed.items || []).map((item) => {
+    const qty = Number(item.quantity) || 1;
+    const totPrice =
+      typeof item.totalPrice === 'number' && item.totalPrice > 0
+        ? Math.round(item.totalPrice * 100) / 100
+        : typeof item.unitPrice === 'number' && item.unitPrice > 0
+        ? Math.round(item.unitPrice * qty * 100) / 100
+        : 0;
+
+    const uPrice =
+      typeof item.unitPrice === 'number' && item.unitPrice > 0
+        ? Math.round(item.unitPrice * 100) / 100
+        : qty > 0 && totPrice > 0
+        ? Math.round((totPrice / qty) * 100) / 100
+        : totPrice;
+
+    return {
+      ...item,
+      name: item.name || 'Article',
+      quantity: qty,
+      unitPrice: uPrice,
+      totalPrice: totPrice,
+      isPersonal: false,
+      category: item.category || 'Alimentation',
+    };
+  });
 
   if (!parsed.total) {
     parsed.total = parsed.items.reduce((acc, it) => acc + it.totalPrice, 0);

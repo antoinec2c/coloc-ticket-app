@@ -28,6 +28,8 @@ import {
   Square,
   RotateCcw,
   Key,
+  Receipt,
+  Edit2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -47,6 +49,7 @@ export default function ZeroWaitReview({
   const { currentColoc, currentMember, members, apiKey, setApiKey } = useProfile();
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [showImagePreview, setShowImagePreview] = useState<boolean>(false);
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(!initialData && Boolean(imageFile));
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [inlineKey, setInlineKey] = useState<string>('');
@@ -71,6 +74,22 @@ export default function ZeroWaitReview({
     currentMember?.id || members[0]?.id || ''
   );
 
+  // Synchroniser automatiquement le payeur dès que les profils de la coloc sont chargés
+  useEffect(() => {
+    if (members.length > 0) {
+      const isValidPayer = members.some((m) => m.id === payerId);
+      if (!isValidPayer) {
+        setPayerId(currentMember?.id || members[0].id);
+      }
+    }
+  }, [members, currentMember?.id, payerId]);
+
+  // Mode édition rapide d'un article
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPrice, setEditPrice] = useState('');
+  const [editQty, setEditQty] = useState('1');
+
   // Gestion vocale en temps masqué
   const [isListening, setIsListening] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -86,6 +105,14 @@ export default function ZeroWaitReview({
   const accumulatedFinalRef = useRef<string>('');
   const pendingPhrasesRef = useRef<string[]>([]);
   const itemsRef = useRef<ExpenseItem[]>(items);
+  const analyzedFileRef = useRef<File | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const apiKeyRef = useRef<string | undefined>(apiKey);
+
+  // Synchroniser apiKeyRef
+  useEffect(() => {
+    apiKeyRef.current = apiKey;
+  }, [apiKey]);
 
   // Garder itemsRef toujours synchronisé
   useEffect(() => {
@@ -119,10 +146,32 @@ export default function ZeroWaitReview({
     }
   };
 
+  // Aperçu du ticket : création et libération propre de l'URL pour éviter toute boucle ou fuite mémoire
+  useEffect(() => {
+    if (!imageFile || imageFile.type === 'application/pdf') {
+      setPreviewUrl(null);
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(imageFile);
+    setPreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [imageFile]);
+
   // 1. ANALYSER LE TICKET (réutilisable via bouton Réessayer)
   const analyzeReceipt = useCallback(
     async (customKey?: string) => {
       if (!imageFile) return;
+
+      // Annuler toute analyse en cours pour éviter les réponses concurrentes qui écrasent les sélections
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
       setIsAnalyzing(true);
       setErrorMsg(null);
@@ -143,36 +192,50 @@ export default function ZeroWaitReview({
         } else {
           // Redimensionnement Canvas (1600px, 0.85) -> net et précis
           base64 = await new Promise<string>((resolve, reject) => {
+            const tempUrl = URL.createObjectURL(imageFile);
             const img = new Image();
             img.onload = () => {
-              const MAX = 1600;
-              let w = img.width;
-              let h = img.height;
-              if (w > MAX || h > MAX) {
-                if (w > h) {
-                  h = Math.round((h * MAX) / w);
-                  w = MAX;
-                } else {
-                  w = Math.round((w * MAX) / h);
-                  h = MAX;
+              try {
+                const MAX = 1600;
+                let w = img.width;
+                let h = img.height;
+                if (w > MAX || h > MAX) {
+                  if (w > h) {
+                    h = Math.round((h * MAX) / w);
+                    w = MAX;
+                  } else {
+                    w = Math.round((w * MAX) / h);
+                    h = MAX;
+                  }
                 }
-              }
 
-              const canvas = document.createElement('canvas');
-              canvas.width = w;
-              canvas.height = h;
-              const ctx = canvas.getContext('2d')!;
-              ctx.drawImage(img, 0, 0, w, h);
-              resolve(canvas.toDataURL('image/jpeg', 0.85));
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                  reject(new Error("Impossible de créer le contexte canvas."));
+                  return;
+                }
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', 0.85));
+              } catch (err) {
+                reject(err);
+              } finally {
+                URL.revokeObjectURL(tempUrl);
+              }
             };
-            img.onerror = () => reject(new Error("Format d'image non supporté par le navigateur."));
-            img.src = previewUrl || URL.createObjectURL(imageFile);
+            img.onerror = () => {
+              URL.revokeObjectURL(tempUrl);
+              reject(new Error("Format d'image non supporté par le navigateur."));
+            };
+            img.src = tempUrl;
           });
         }
 
         const effectiveApiKey =
           customKey ||
-          apiKey ||
+          apiKeyRef.current ||
           (typeof window !== 'undefined' ? localStorage.getItem('coloc_gemini_api_key') : '') ||
           undefined;
 
@@ -184,6 +247,7 @@ export default function ZeroWaitReview({
             mimeType: mimeType || 'image/jpeg',
             apiKey: effectiveApiKey,
           }),
+          signal: controller.signal,
         });
 
         const data = await res.json();
@@ -195,15 +259,32 @@ export default function ZeroWaitReview({
         setStore(extracted.store || 'Supermarché');
         if (extracted.date) setDate(extracted.date);
 
-        let newItems: ExpenseItem[] = (extracted.items || []).map((it, idx) => ({
-          id: `item-${idx}-${Date.now()}`,
-          name: it.name,
-          quantity: it.quantity || 1,
-          unitPrice: it.unitPrice || it.totalPrice || 0,
-          totalPrice: it.totalPrice || 0,
-          isPersonal: false,
-          category: it.category || 'Alimentation',
-        }));
+        const timestamp = Date.now();
+        let newItems: ExpenseItem[] = (extracted.items || []).map((it, idx) => {
+          const qty = Number(it.quantity) || 1;
+          const totPrice =
+            typeof it.totalPrice === 'number' && it.totalPrice > 0
+              ? Math.round(it.totalPrice * 100) / 100
+              : typeof it.unitPrice === 'number' && it.unitPrice > 0
+              ? Math.round(it.unitPrice * qty * 100) / 100
+              : 0;
+          const uPrice =
+            typeof it.unitPrice === 'number' && it.unitPrice > 0
+              ? Math.round(it.unitPrice * 100) / 100
+              : qty > 0 && totPrice > 0
+              ? Math.round((totPrice / qty) * 100) / 100
+              : totPrice;
+
+          return {
+            id: `item-${idx}-${timestamp}`,
+            name: it.name || 'Article',
+            quantity: qty,
+            unitPrice: uPrice,
+            totalPrice: totPrice,
+            isPersonal: false,
+            category: it.category || 'Alimentation',
+          };
+        });
 
         // Si l'utilisateur a déjà dicté ses achats perso pendant le chargement, les appliquer direct !
         if (pendingPhrasesRef.current.length > 0) {
@@ -228,25 +309,38 @@ export default function ZeroWaitReview({
         itemsRef.current = newItems;
         setItems(newItems);
       } catch (err: any) {
+        if (err.name === 'AbortError') {
+          // Requête annulée intentionnellement, ne pas afficher d'erreur
+          return;
+        }
         console.error(err);
         setErrorMsg(err.message || 'Impossible de lire le ticket');
       } finally {
-        setIsAnalyzing(false);
+        if (!controller.signal.aborted) {
+          setIsAnalyzing(false);
+        }
       }
     },
-    [imageFile, previewUrl, apiKey]
+    [imageFile]
   );
 
-  // Déclencher l'analyse dès le montage si image présente
+  // Déclencher l'analyse une seule fois par image dès le montage (évite la boucle infinie)
   useEffect(() => {
-    if (!imageFile) return;
+    if (!imageFile || initialData) return;
+    if (analyzedFileRef.current === imageFile) return;
 
-    const isPdf = imageFile.type === 'application/pdf';
-    const objectUrl = URL.createObjectURL(imageFile);
-    setPreviewUrl(isPdf ? null : objectUrl);
-
+    analyzedFileRef.current = imageFile;
     analyzeReceipt();
-  }, [imageFile, analyzeReceipt]);
+  }, [imageFile, initialData, analyzeReceipt]);
+
+  // Nettoyage au démontage
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
   // Sécurité réactive : appliquer toute consigne restante dès que items est non vide
   useEffect(() => {
@@ -475,6 +569,82 @@ export default function ZeroWaitReview({
     );
   };
 
+  // Définir explicitement le statut d'un article
+  const setItemPersonal = (id: string, isPersonal: boolean) => {
+    setItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, isPersonal } : it))
+    );
+  };
+
+  // Passer tous les articles en Coloc ou en Perso
+  const setAllPersonal = (isPersonal: boolean) => {
+    setItems((prev) => prev.map((it) => ({ ...it, isPersonal })));
+  };
+
+  // Supprimer un article
+  const removeItem = (id: string) => {
+    setItems((prev) => prev.filter((it) => it.id !== id));
+    if (editingItemId === id) {
+      setEditingItemId(null);
+    }
+  };
+
+  // Éditer un article
+  const startEditItem = (item: ExpenseItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingItemId(item.id);
+    setEditName(item.name);
+    setEditPrice(item.totalPrice.toFixed(2));
+    setEditQty(String(item.quantity || 1));
+  };
+
+  const saveEditedItem = (id: string, e?: React.MouseEvent | React.FormEvent) => {
+    if (e) e.stopPropagation();
+    const parsedPrice = parseFloat(editPrice.replace(',', '.')) || 0;
+    const parsedQty = parseInt(editQty, 10) || 1;
+    const cleanPrice = Math.max(0, Math.round(parsedPrice * 100) / 100);
+    const cleanQty = Math.max(1, parsedQty);
+
+    setItems((prev) =>
+      prev.map((it) =>
+        it.id === id
+          ? {
+              ...it,
+              name: editName.trim() || it.name,
+              quantity: cleanQty,
+              totalPrice: cleanPrice,
+              unitPrice: Math.round((cleanPrice / cleanQty) * 100) / 100,
+            }
+          : it
+      )
+    );
+    setEditingItemId(null);
+  };
+
+  const cancelEditItem = (e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingItemId(null);
+  };
+
+  // Ajouter un article manquant et ouvrir son édition
+  const addItem = () => {
+    const newId = `item-manual-${Date.now()}`;
+    const newItem: ExpenseItem = {
+      id: newId,
+      name: 'Nouvel article',
+      quantity: 1,
+      unitPrice: 1.0,
+      totalPrice: 1.0,
+      isPersonal: false,
+      category: 'Alimentation',
+    };
+    setItems((prev) => [...prev, newItem]);
+    setEditingItemId(newId);
+    setEditName('Nouvel article');
+    setEditPrice('1.00');
+    setEditQty('1');
+  };
+
   // Calculs en temps réel
   const colocTotal = Math.round(
     items.filter((it) => !it.isPersonal).reduce((acc, it) => acc + it.totalPrice, 0) * 100
@@ -490,6 +660,10 @@ export default function ZeroWaitReview({
   const handleSave = async () => {
     if (!payerId) {
       alert('Sélectionnez qui a payé');
+      return;
+    }
+    if (items.length === 0) {
+      alert('Il faut au moins un article dans la dépense');
       return;
     }
 
@@ -697,6 +871,36 @@ export default function ZeroWaitReview({
         </select>
       </div>
 
+      {/* MAGASIN & DATE MODIFIABLES */}
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="flex items-center gap-2 rounded-2xl bg-white border border-gray-200 px-3 py-2 shadow-sm">
+          <Store className="h-4 w-4 text-emerald-600 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <span className="text-[10px] font-bold text-gray-400 block uppercase">Magasin</span>
+            <input
+              type="text"
+              value={store}
+              onChange={(e) => setStore(e.target.value)}
+              placeholder="Ex: Carrefour, Lidl..."
+              className="w-full bg-transparent font-bold text-gray-800 focus:outline-none text-xs truncate"
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 rounded-2xl bg-white border border-gray-200 px-3 py-2 shadow-sm">
+          <Calendar className="h-4 w-4 text-emerald-600 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <span className="text-[10px] font-bold text-gray-400 block uppercase">Date</span>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full bg-transparent font-bold text-gray-800 focus:outline-none text-xs"
+            />
+          </div>
+        </div>
+      </div>
+
       {/* ERREUR EVENTUELLE */}
       {errorMsg && (
         <div className="rounded-xl bg-rose-50 p-3 text-xs font-semibold text-rose-700 border border-rose-200 space-y-2.5 break-words min-w-0">
@@ -764,15 +968,74 @@ export default function ZeroWaitReview({
         </div>
       )}
 
+      {/* APERÇU DU TICKET DE CAISSE (ESCORTÉ / CONSULTABLE) */}
+      {previewUrl && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-3 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setShowImagePreview((prev) => !prev)}
+            className="flex items-center justify-between w-full text-xs font-bold text-gray-700 hover:text-emerald-700 transition-colors"
+          >
+            <span className="flex items-center gap-1.5">
+              <Receipt className="h-4 w-4 text-emerald-600" />
+              Photo du ticket de caisse
+            </span>
+            <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+              {showImagePreview ? 'Masquer' : 'Voir la photo'}
+            </span>
+          </button>
+          {showImagePreview && (
+            <div className="mt-3 overflow-hidden rounded-xl border border-gray-100 bg-gray-900 max-h-72 flex items-center justify-center">
+              <img
+                src={previewUrl}
+                alt="Ticket original"
+                className="max-h-72 object-contain"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* LISTE DES ARTICLES TACTILES */}
       <div className="space-y-2">
         <div className="flex items-center justify-between px-1">
-          <span className="text-xs font-black text-gray-700 uppercase tracking-wider">
-            Articles ({items.length})
-          </span>
-          <span className="text-[11px] text-gray-400">
-            Touchez pour basculer Coloc / Perso
-          </span>
+          <div>
+            <span className="text-xs font-black text-gray-700 uppercase tracking-wider block">
+              Articles ({items.length})
+            </span>
+            <span className="text-[11px] text-gray-400">
+              Touchez un article ou les boutons pour basculer Coloc / Perso
+            </span>
+          </div>
+
+          {items.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setAllPersonal(false)}
+                className="text-[11px] font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg transition-colors"
+                title="Passer tous les articles en Coloc"
+              >
+                Tout Coloc
+              </button>
+              <button
+                type="button"
+                onClick={() => setAllPersonal(true)}
+                className="text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg transition-colors"
+                title="Passer tous les articles en Perso"
+              >
+                Tout Perso
+              </button>
+              <button
+                type="button"
+                onClick={addItem}
+                className="text-[11px] font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-200 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors"
+                title="Ajouter un article manquant"
+              >
+                <Plus className="h-3 w-3" />
+              </button>
+            </div>
+          )}
         </div>
 
         {items.length === 0 && isAnalyzing ? (
@@ -781,43 +1044,177 @@ export default function ZeroWaitReview({
             <p className="text-xs font-bold text-gray-700">Déchiffrement du ticket...</p>
             <p className="text-[11px] text-gray-400">Vos articles vont s'afficher ici dans un instant</p>
           </div>
-        ) : (
-          items.map((item) => (
-            <div
-              key={item.id}
-              onClick={() => toggleItem(item.id)}
-              className={`flex items-center justify-between rounded-2xl border p-3.5 cursor-pointer transition-all active:scale-[0.98] ${
-                item.isPersonal
-                  ? 'border-blue-300 bg-blue-50/60 shadow-sm'
-                  : 'border-emerald-200 bg-white hover:bg-emerald-50/30 shadow-sm'
-              }`}
+        ) : items.length === 0 ? (
+          <div className="py-8 text-center rounded-2xl bg-white border border-gray-100 shadow-sm space-y-2">
+            <p className="text-xs font-bold text-gray-700">Aucun article détecté</p>
+            <button
+              type="button"
+              onClick={addItem}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 rounded-xl border border-emerald-200 hover:bg-emerald-100"
             >
-              <div className="flex-1 pr-3">
-                <div className="text-xs sm:text-sm font-bold text-gray-900">
-                  {item.name}
+              <Plus className="h-3.5 w-3.5" /> Ajouter un article manuellement
+            </button>
+          </div>
+        ) : (
+          items.map((item) =>
+            editingItemId === item.id ? (
+              <div
+                key={item.id}
+                onClick={(e) => e.stopPropagation()}
+                className="rounded-2xl border-2 border-emerald-400 bg-white p-3.5 shadow-md space-y-2.5 animate-fadeIn"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">
+                      Nom de l'article
+                    </label>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Nom de l'article"
+                      className="w-full rounded-xl border border-gray-300 px-2.5 py-1.5 text-xs font-bold text-gray-900 focus:border-emerald-500 focus:outline-none"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="w-24">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5 text-right">
+                      Prix total
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={editPrice}
+                        onChange={(e) => setEditPrice(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full rounded-xl border border-gray-300 pl-2 pr-6 py-1.5 text-xs font-black text-gray-900 focus:border-emerald-500 focus:outline-none text-right"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">
+                        €
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-[11px] text-gray-400 mt-0.5">
-                  {item.quantity > 1 ? `x${item.quantity} • ` : ''}{item.category}
+
+                <div className="flex items-center justify-between pt-1">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+                    <span className="text-[11px] text-gray-400 font-bold uppercase">Quantité :</span>
+                    <input
+                      type="number"
+                      min="1"
+                      value={editQty}
+                      onChange={(e) => setEditQty(e.target.value)}
+                      className="w-12 rounded-lg border border-gray-300 px-2 py-1 text-xs font-bold text-center"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={cancelEditItem}
+                      className="px-2.5 py-1.5 rounded-xl border border-gray-200 text-xs font-bold text-gray-600 hover:bg-gray-100 transition-colors"
+                    >
+                      Annuler
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => saveEditedItem(item.id, e)}
+                      className="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 flex items-center gap-1 shadow-sm transition-colors"
+                    >
+                      <Check className="h-3.5 w-3.5" /> Enregistrer
+                    </button>
+                  </div>
                 </div>
               </div>
+            ) : (
+              <div
+                key={item.id}
+                onClick={() => toggleItem(item.id)}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === ' ' || e.key === 'Enter') {
+                    e.preventDefault();
+                    toggleItem(item.id);
+                  }
+                }}
+                className={`flex items-center justify-between rounded-2xl border p-3 cursor-pointer select-none transition-all active:scale-[0.99] ${
+                  item.isPersonal
+                    ? 'border-blue-300 bg-blue-50/70 shadow-sm'
+                    : 'border-emerald-200 bg-white hover:bg-emerald-50/30 shadow-sm'
+                }`}
+              >
+                <div className="flex-1 pr-2 min-w-0">
+                  <div className="text-xs sm:text-sm font-bold text-gray-900 truncate">
+                    {item.name}
+                  </div>
+                  <div className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-2">
+                    <span>{item.quantity > 1 ? `x${item.quantity} • ` : ''}{item.category || 'Alimentation'}</span>
+                    <span className="font-semibold text-gray-700">{item.totalPrice.toFixed(2)} €</span>
+                  </div>
+                </div>
 
-              <div className="flex items-center gap-3">
-                <span className="text-sm font-black text-gray-900">
-                  {item.totalPrice.toFixed(2)} €
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Sélecteur explicite Coloc / Perso */}
+                  <div className="flex rounded-xl bg-gray-100/90 p-0.5 border border-gray-200/80 shadow-inner">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setItemPersonal(item.id, false);
+                      }}
+                      className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition-all ${
+                        !item.isPersonal
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-emerald-700'
+                      }`}
+                    >
+                      🟢 Coloc
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setItemPersonal(item.id, true);
+                      }}
+                      className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition-all ${
+                        item.isPersonal
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-blue-700'
+                      }`}
+                    >
+                      🔵 Perso
+                    </button>
+                  </div>
 
-                <span
-                  className={`rounded-xl px-2.5 py-1 text-[11px] font-black tracking-wide ${
-                    item.isPersonal
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-emerald-100 text-emerald-800'
-                  }`}
-                >
-                  {item.isPersonal ? '🔵 Pour moi' : '🟢 Coloc'}
-                </span>
+                  {/* Modifier cet article */}
+                  <button
+                    type="button"
+                    onClick={(e) => startEditItem(item, e)}
+                    className="text-gray-400 hover:text-emerald-700 p-1.5 rounded-lg hover:bg-emerald-50 transition-colors"
+                    title="Modifier le nom ou le prix de cet article"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </button>
+
+                  {/* Supprimer cet article */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeItem(item.id);
+                    }}
+                    className="text-gray-300 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
+                    title="Supprimer cet article"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
-            </div>
-          ))
+            )
+          )
         )}
       </div>
 

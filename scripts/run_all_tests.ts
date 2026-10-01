@@ -984,6 +984,247 @@ suite('17. Anti-Répétition Vocale & Déduplication (Android Chrome Bug)', () =
   });
 });
 
+// ----------------------------------------------------
+// SUITE 18 : GESTION DES ARTICLES ZERO-WAIT (TOGGLES, LOTS, AJOUT, SUPPRESSION)
+// ----------------------------------------------------
+suite('18. Gestion des Articles Zero-Wait : Toggles, Lots, Ajout, Suppression & Totaux', () => {
+  test('Bascule unitaire (toggle) et bascule explicite (Coloc / Perso)', () => {
+    let items: ExpenseItem[] = [
+      { id: 'it-1', name: 'Pain', quantity: 1, unitPrice: 1.2, totalPrice: 1.2, isPersonal: false },
+      { id: 'it-2', name: 'Bière', quantity: 2, unitPrice: 3.0, totalPrice: 6.0, isPersonal: false },
+    ];
+
+    // 1. Toggle it-2
+    items = items.map((it) => (it.id === 'it-2' ? { ...it, isPersonal: !it.isPersonal } : it));
+    assertEqual(items.find((i) => i.id === 'it-2')?.isPersonal, true, 'it-2 doit être en perso');
+
+    // 2. Set explicitement it-2 en Coloc
+    items = items.map((it) => (it.id === 'it-2' ? { ...it, isPersonal: false } : it));
+    assertEqual(items.find((i) => i.id === 'it-2')?.isPersonal, false, 'it-2 doit être remis en coloc');
+
+    // 3. Set explicitement it-1 en Perso
+    items = items.map((it) => (it.id === 'it-1' ? { ...it, isPersonal: true } : it));
+    assertEqual(items.find((i) => i.id === 'it-1')?.isPersonal, true, 'it-1 doit être en perso');
+  });
+
+  test('Actions par lot : "Tout Coloc" et "Tout Perso"', () => {
+    let items: ExpenseItem[] = [
+      { id: 'it-1', name: 'A', quantity: 1, unitPrice: 2, totalPrice: 2, isPersonal: false },
+      { id: 'it-2', name: 'B', quantity: 1, unitPrice: 3, totalPrice: 3, isPersonal: true },
+      { id: 'it-3', name: 'C', quantity: 1, unitPrice: 5, totalPrice: 5, isPersonal: false },
+    ];
+
+    // Tout en Perso
+    items = items.map((it) => ({ ...it, isPersonal: true }));
+    assert(items.every((it) => it.isPersonal), 'Tous les articles doivent être en perso');
+
+    // Tout en Coloc
+    items = items.map((it) => ({ ...it, isPersonal: false }));
+    assert(items.every((it) => !it.isPersonal), 'Tous les articles doivent être en coloc');
+  });
+
+  test('Ajout et suppression manuelle d\'articles', () => {
+    let items: ExpenseItem[] = [
+      { id: 'it-1', name: 'Pommes', quantity: 1, unitPrice: 2.5, totalPrice: 2.5, isPersonal: false },
+    ];
+
+    // Ajout d'un article
+    const newItem: ExpenseItem = {
+      id: 'it-manual',
+      name: 'Chocolat',
+      quantity: 2,
+      unitPrice: 1.5,
+      totalPrice: 3.0,
+      isPersonal: true,
+      category: 'Alimentation',
+    };
+    items = [...items, newItem];
+    assertEqual(items.length, 2, 'Doit avoir 2 articles');
+
+    // Suppression d'un article
+    items = items.filter((it) => it.id !== 'it-1');
+    assertEqual(items.length, 1, 'Doit avoir 1 article restant');
+    assertEqual(items[0].id, 'it-manual', 'L\'article restant doit être le nouveau');
+  });
+
+  test('Calculs exacts des totaux Coloc, Perso et Général', () => {
+    const items: ExpenseItem[] = [
+      { id: 'it-1', name: 'Lait', quantity: 2, unitPrice: 1.15, totalPrice: 2.30, isPersonal: false },
+      { id: 'it-2', name: 'Pâtes', quantity: 3, unitPrice: 0.90, totalPrice: 2.70, isPersonal: false },
+      { id: 'it-3', name: 'Shampoing Perso', quantity: 1, unitPrice: 4.55, totalPrice: 4.55, isPersonal: true },
+    ];
+
+    const colocTotal = Math.round(
+      items.filter((it) => !it.isPersonal).reduce((acc, it) => acc + it.totalPrice, 0) * 100
+    ) / 100;
+
+    const persoTotal = Math.round(
+      items.filter((it) => it.isPersonal).reduce((acc, it) => acc + it.totalPrice, 0) * 100
+    ) / 100;
+
+    const grandTotal = Math.round((colocTotal + persoTotal) * 100) / 100;
+
+    assertEqual(colocTotal, 5.00, 'Total coloc = 2.30 + 2.70 = 5.00€');
+    assertEqual(persoTotal, 4.55, 'Total perso = 4.55€');
+    assertEqual(grandTotal, 9.55, 'Grand total = 9.55€');
+  });
+});
+
+// ----------------------------------------------------
+// SUITE 19 : CALCUL DE SECOURS DES PRIX ET QUANTITÉS
+// ----------------------------------------------------
+suite('19. Calcul de Secours des Prix et Quantités (Robustesse OCR)', () => {
+  test('Prix total déduit automatiquement à partir de unitPrice * quantity si totalPrice est 0 ou absent', () => {
+    const rawItems = [
+      { name: 'Pommes', quantity: 3, unitPrice: 1.5, totalPrice: 0 },
+      { name: 'Poires', quantity: 2, unitPrice: 2.1, totalPrice: undefined as any },
+    ];
+
+    const mapped = rawItems.map((it, idx) => {
+      const qty = Number(it.quantity) || 1;
+      const totPrice =
+        typeof it.totalPrice === 'number' && it.totalPrice > 0
+          ? Math.round(it.totalPrice * 100) / 100
+          : typeof it.unitPrice === 'number' && it.unitPrice > 0
+          ? Math.round(it.unitPrice * qty * 100) / 100
+          : 0;
+      const uPrice =
+        typeof it.unitPrice === 'number' && it.unitPrice > 0
+          ? Math.round(it.unitPrice * 100) / 100
+          : qty > 0 && totPrice > 0
+          ? Math.round((totPrice / qty) * 100) / 100
+          : totPrice;
+
+      return {
+        id: `item-${idx}`,
+        name: it.name,
+        quantity: qty,
+        unitPrice: uPrice,
+        totalPrice: totPrice,
+        isPersonal: false,
+        category: 'Alimentation',
+      };
+    });
+
+    assertEqual(mapped[0].totalPrice, 4.5, 'Pommes: 3 x 1.5 = 4.5€');
+    assertEqual(mapped[0].unitPrice, 1.5, 'Pommes: unitPrice = 1.5€');
+    assertEqual(mapped[1].totalPrice, 4.2, 'Poires: 2 x 2.1 = 4.2€');
+    assertEqual(mapped[1].unitPrice, 2.1, 'Poires: unitPrice = 2.1€');
+  });
+
+  test('Prix unitaire déduit automatiquement à partir de totalPrice / quantity si unitPrice est 0 ou absent', () => {
+    const rawItems = [
+      { name: 'Pack Eau', quantity: 6, unitPrice: 0, totalPrice: 3.6 },
+    ];
+
+    const mapped = rawItems.map((it, idx) => {
+      const qty = Number(it.quantity) || 1;
+      const totPrice =
+        typeof it.totalPrice === 'number' && it.totalPrice > 0
+          ? Math.round(it.totalPrice * 100) / 100
+          : typeof it.unitPrice === 'number' && it.unitPrice > 0
+          ? Math.round(it.unitPrice * qty * 100) / 100
+          : 0;
+      const uPrice =
+        typeof it.unitPrice === 'number' && it.unitPrice > 0
+          ? Math.round(it.unitPrice * 100) / 100
+          : qty > 0 && totPrice > 0
+          ? Math.round((totPrice / qty) * 100) / 100
+          : totPrice;
+
+      return {
+        id: `item-${idx}`,
+        name: it.name,
+        quantity: qty,
+        unitPrice: uPrice,
+        totalPrice: totPrice,
+        isPersonal: false,
+        category: 'Alimentation',
+      };
+    });
+
+    assertEqual(mapped[0].totalPrice, 3.6, 'Pack Eau: totalPrice = 3.6€');
+    assertEqual(mapped[0].unitPrice, 0.6, 'Pack Eau: 3.6 / 6 = 0.6€');
+  });
+});
+
+// ----------------------------------------------------
+// SUITE 20 : ÉDITION RAPIDE D'UN ARTICLE (NOM, PRIX, QUANTITÉ)
+// ----------------------------------------------------
+suite('20. Édition Rapide d\'un Article (Nom, Prix, Quantité)', () => {
+  test('Modification du nom et du prix recalculant les totaux correctement', () => {
+    let items: ExpenseItem[] = [
+      { id: 'it-1', name: 'Nouvel article', quantity: 1, unitPrice: 1.0, totalPrice: 1.0, isPersonal: false },
+      { id: 'it-2', name: 'Bière', quantity: 1, unitPrice: 5.0, totalPrice: 5.0, isPersonal: true },
+    ];
+
+    // Simuler saveEditedItem
+    const editName = 'Pack Lessive';
+    const editPrice = '12.50';
+    const editQty = '2';
+
+    const parsedPrice = parseFloat(editPrice.replace(',', '.')) || 0;
+    const parsedQty = parseInt(editQty, 10) || 1;
+    const cleanPrice = Math.max(0, Math.round(parsedPrice * 100) / 100);
+    const cleanQty = Math.max(1, parsedQty);
+
+    items = items.map((it) =>
+      it.id === 'it-1'
+        ? {
+            ...it,
+            name: editName.trim() || it.name,
+            quantity: cleanQty,
+            totalPrice: cleanPrice,
+            unitPrice: Math.round((cleanPrice / cleanQty) * 100) / 100,
+          }
+        : it
+    );
+
+    const edited = items.find((i) => i.id === 'it-1')!;
+    assertEqual(edited.name, 'Pack Lessive', 'Nom mis à jour');
+    assertEqual(edited.quantity, 2, 'Quantité mise à jour à 2');
+    assertEqual(edited.totalPrice, 12.50, 'Prix total mis à jour à 12.50€');
+    assertEqual(edited.unitPrice, 6.25, 'Prix unitaire calculé à 6.25€');
+
+    // Totaux
+    const colocTotal = Math.round(
+      items.filter((it) => !it.isPersonal).reduce((acc, it) => acc + it.totalPrice, 0) * 100
+    ) / 100;
+    const persoTotal = Math.round(
+      items.filter((it) => it.isPersonal).reduce((acc, it) => acc + it.totalPrice, 0) * 100
+    ) / 100;
+
+    assertEqual(colocTotal, 12.50, 'Coloc = 12.50€');
+    assertEqual(persoTotal, 5.00, 'Perso = 5.00€');
+    assertEqual(colocTotal + persoTotal, 17.50, 'Total = 17.50€');
+  });
+
+  test('Stabilité des références : évitement des boucles infinies de state', () => {
+    // Vérification de la fonction de mémoisation d'identité
+    const prevMember = { id: 'm-1', name: 'Alice', avatar: '👩', color: '#10b981' };
+    const newlyFetchedSameMember = { id: 'm-1', name: 'Alice', avatar: '👩', color: '#10b981' };
+
+    // Comparateur utilisé dans ProfileContext
+    const shouldKeepPrev = (
+      prev: typeof prevMember,
+      next: typeof newlyFetchedSameMember
+    ) => {
+      return (
+        prev &&
+        prev.id === next.id &&
+        prev.name === next.name &&
+        prev.avatar === next.avatar &&
+        prev.color === next.color
+      );
+    };
+
+    assert(shouldKeepPrev(prevMember, newlyFetchedSameMember), 'Doit conserver prev pour éviter le re-render');
+
+    const differentMember = { id: 'm-1', name: 'Alice Modified', avatar: '👩', color: '#10b981' };
+    assert(!shouldKeepPrev(prevMember, differentMember), 'Doit autoriser la mise à jour si données modifiées');
+  });
+});
+
 // ==========================================
 // RAPPORT FINAL D'EXÉCUTION
 // ==========================================
