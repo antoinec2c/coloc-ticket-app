@@ -16,6 +16,9 @@ import {
   DollarSign,
   User,
   Info,
+  Users,
+  X,
+  Check,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -45,6 +48,7 @@ export default function ItemReviewList({
       totalPrice: it.totalPrice || 0,
       isPersonal: it.isPersonal ?? false, // 100% Coloc par défaut
       category: it.category || 'Alimentation',
+      assignedMemberIds: it.assignedMemberIds,
     }))
   );
 
@@ -56,10 +60,82 @@ export default function ItemReviewList({
   const [saving, setSaving] = useState(false);
   const [showImagePreview, setShowImagePreview] = useState(false);
 
-  // Basculer un article entre Coloc et Perso
-  const toggleItemPersonal = (id: string) => {
+  // Sélecteur de colocataires pour un article ou par lot
+  const [memberPickerItem, setMemberPickerItem] = useState<ExpenseItem | null>(null);
+  const [tempSelectedMemberIds, setTempSelectedMemberIds] = useState<string[]>([]);
+  const [isBatchPicker, setIsBatchPicker] = useState<boolean>(false);
+
+  const openMemberPicker = (item: ExpenseItem) => {
+    setIsBatchPicker(false);
+    setMemberPickerItem(item);
+    const validAssigned = (item.assignedMemberIds || []).filter((id) => members.some((m) => m.id === id));
+    if (validAssigned.length > 0) {
+      setTempSelectedMemberIds([...validAssigned]);
+    } else if (item.isPersonal) {
+      setTempSelectedMemberIds([payerId]);
+    } else {
+      setTempSelectedMemberIds(members.map((m) => m.id));
+    }
+  };
+
+  const openBatchMemberPicker = () => {
+    setIsBatchPicker(true);
+    setMemberPickerItem(null);
+    setTempSelectedMemberIds(members.map((m) => m.id));
+  };
+
+  const toggleMemberInPicker = (memberId: string) => {
+    setTempSelectedMemberIds((prev) =>
+      prev.includes(memberId) ? prev.filter((id) => id !== memberId) : [...prev, memberId]
+    );
+  };
+
+  const saveMemberPicker = () => {
+    if (tempSelectedMemberIds.length === 0) return;
+
+    if (isBatchPicker) {
+      const isAll = tempSelectedMemberIds.length === members.length;
+      const isOnlyPayer = tempSelectedMemberIds.length === 1 && tempSelectedMemberIds[0] === payerId;
+
+      setItems((prev) =>
+        prev.map((it) => {
+          if (isAll) {
+            return { ...it, isPersonal: false, assignedMemberIds: undefined };
+          }
+          if (isOnlyPayer) {
+            return { ...it, isPersonal: true, assignedMemberIds: undefined };
+          }
+          return { ...it, isPersonal: false, assignedMemberIds: tempSelectedMemberIds };
+        })
+      );
+      setIsBatchPicker(false);
+      return;
+    }
+
+    if (!memberPickerItem) return;
+
+    const isAll = tempSelectedMemberIds.length === members.length;
+    const isOnlyPayer = tempSelectedMemberIds.length === 1 && tempSelectedMemberIds[0] === payerId;
+
     setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, isPersonal: !it.isPersonal } : it))
+      prev.map((it) => {
+        if (it.id !== memberPickerItem.id) return it;
+        if (isAll) {
+          return { ...it, isPersonal: false, assignedMemberIds: undefined };
+        }
+        if (isOnlyPayer) {
+          return { ...it, isPersonal: true, assignedMemberIds: undefined };
+        }
+        return { ...it, isPersonal: false, assignedMemberIds: tempSelectedMemberIds };
+      })
+    );
+    setMemberPickerItem(null);
+  };
+
+  // Définir l'attribution d'un article de façon atomique
+  const setItemAssignment = (id: string, isPersonal: boolean, assignedMemberIds?: string[]) => {
+    setItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, isPersonal, assignedMemberIds } : it))
     );
   };
 
@@ -105,13 +181,18 @@ export default function ItemReviewList({
   ) => {
     const isPersonal = action === 'set_personal';
     setItems((prev) =>
-      prev.map((it) => (matchedIds.includes(it.id) ? { ...it, isPersonal } : it))
+      prev.map((it) => (matchedIds.includes(it.id) ? { ...it, isPersonal, assignedMemberIds: undefined } : it))
     );
   };
 
   // Tout passer pour la coloc
   const setAllColoc = () => {
-    setItems((prev) => prev.map((it) => ({ ...it, isPersonal: false })));
+    setItems((prev) => prev.map((it) => ({ ...it, isPersonal: false, assignedMemberIds: undefined })));
+  };
+
+  // Tout passer en perso
+  const setAllPerso = () => {
+    setItems((prev) => prev.map((it) => ({ ...it, isPersonal: true, assignedMemberIds: undefined })));
   };
 
   // Calculs dynamiques des totaux
@@ -270,99 +351,150 @@ export default function ItemReviewList({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={setAllColoc}
-              className="text-xs font-semibold text-gray-600 hover:text-emerald-700 bg-gray-100 hover:bg-emerald-50 px-2.5 py-1.5 rounded-lg transition-colors"
+              className="text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1.5 rounded-lg transition-colors"
+              title="Passer tous les articles en Coloc"
             >
-              Tout en Coloc
+              Tout Coloc
+            </button>
+            <button
+              onClick={setAllPerso}
+              className="text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1.5 rounded-lg transition-colors"
+              title="Passer tous les articles en Perso"
+            >
+              Tout Perso
+            </button>
+            <button
+              onClick={openBatchMemberPicker}
+              className="text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2.5 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+              title="Attribuer tous les articles à des colocataires précis"
+            >
+              <Users className="h-3.5 w-3.5" />
+              <span>Certains</span>
             </button>
             <button
               onClick={addItem}
-              className="flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-lg border border-emerald-200 transition-colors"
+              className="flex items-center gap-1 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-200 px-2.5 py-1.5 rounded-lg transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
-              Ajouter article
+              <span>Ajouter</span>
             </button>
           </div>
         </div>
 
         {/* Liste des lignes d'articles */}
         <div className="space-y-2.5">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-3 transition-all ${
-                item.isPersonal
-                  ? 'border-blue-200 bg-blue-50/50 shadow-sm'
-                  : 'border-emerald-200 bg-emerald-50/30'
-              }`}
-            >
-              {/* Infos article (Nom + Catégorie) */}
-              <div className="flex-1 space-y-1">
-                <input
-                  type="text"
-                  value={item.name}
-                  onChange={(e) => updateItem(item.id, 'name', e.target.value)}
-                  className="w-full font-bold text-xs sm:text-sm text-gray-900 bg-transparent focus:outline-none focus:border-b border-emerald-400"
-                />
-                <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                  <span className="rounded-md bg-white/80 px-2 py-0.5 font-medium border border-gray-200">
-                    {item.category || 'Alimentation'}
-                  </span>
-                  <span>
-                    {item.quantity} x {item.unitPrice.toFixed(2)} €
-                  </span>
-                </div>
-              </div>
+          {items.map((item) => {
+            const validAssigned = item.assignedMemberIds?.filter((id) => members.some((m) => m.id === id));
+            const isCustom = !item.isPersonal && Boolean(validAssigned && validAssigned.length > 0 && validAssigned.length < members.length);
+            const isAll = !item.isPersonal && !isCustom;
+            const isPerso = Boolean(item.isPersonal);
 
-              {/* Prix & Boutons d'attribution Coloc vs Perso */}
-              <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                {/* Prix modifiable */}
-                <div className="text-right">
-                  <span className="text-sm sm:text-base font-black text-gray-900">
-                    {item.totalPrice.toFixed(2)} €
-                  </span>
+            return (
+              <div
+                key={item.id}
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-3 transition-all ${
+                  isPerso
+                    ? 'border-blue-200 bg-blue-50/50 shadow-sm'
+                    : isCustom
+                    ? 'border-purple-200 bg-purple-50/50 shadow-sm'
+                    : 'border-emerald-200 bg-emerald-50/30'
+                }`}
+              >
+                {/* Infos article (Nom + Catégorie) */}
+                <div className="flex-1 space-y-1">
+                  <input
+                    type="text"
+                    value={item.name}
+                    onChange={(e) => updateItem(item.id, 'name', e.target.value)}
+                    className="w-full font-bold text-xs sm:text-sm text-gray-900 bg-transparent focus:outline-none focus:border-b border-emerald-400"
+                  />
+                  <div className="flex items-center gap-2 text-[11px] text-gray-500">
+                    <span className="rounded-md bg-white/80 px-2 py-0.5 font-medium border border-gray-200">
+                      {item.category || 'Alimentation'}
+                    </span>
+                    <span>
+                      {item.quantity} x {item.unitPrice.toFixed(2)} €
+                    </span>
+                  </div>
+
+                  {isCustom && validAssigned && (
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-lg border border-purple-200 mt-1 w-fit">
+                      <span>👥 Pour :</span>
+                      <span>
+                        {members
+                          .filter((m) => validAssigned.includes(m.id))
+                          .map((m) => m.name)
+                          .join(', ') || `${validAssigned.length} colocs`}
+                      </span>
+                      <span className="text-purple-600 font-semibold">
+                        ({(item.totalPrice / validAssigned.length).toFixed(2)} €/p)
+                      </span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Sélecteur tactile Coloc / Perso */}
-                <div className="flex rounded-xl bg-white p-1 shadow-sm border border-gray-200">
+                {/* Prix & Boutons d'attribution Coloc vs Perso vs Certains */}
+                <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                  <div className="text-right">
+                    <span className="text-sm sm:text-base font-black text-gray-900">
+                      {item.totalPrice.toFixed(2)} €
+                    </span>
+                  </div>
+
+                  {/* Sélecteur tactile Coloc / Perso / Certains */}
+                  <div className="flex rounded-xl bg-white p-1 shadow-sm border border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => setItemAssignment(item.id, false, undefined)}
+                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                        isAll
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-emerald-700'
+                      }`}
+                    >
+                      🟢 Coloc
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setItemAssignment(item.id, true, undefined)}
+                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                        isPerso
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-blue-700'
+                      }`}
+                    >
+                      🔵 Perso
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openMemberPicker(item)}
+                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                        isCustom
+                          ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-300'
+                          : 'text-gray-500 hover:text-purple-700'
+                      }`}
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                      <span>{isCustom ? `${validAssigned?.length}` : 'Certains'}</span>
+                    </button>
+                  </div>
+
+                  {/* Supprimer article */}
                   <button
                     type="button"
-                    onClick={() => updateItem(item.id, 'isPersonal', false)}
-                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
-                      !item.isPersonal
-                        ? 'bg-emerald-600 text-white shadow-sm'
-                        : 'text-gray-500 hover:text-emerald-700'
-                    }`}
+                    onClick={() => removeItem(item.id)}
+                    className="text-gray-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors"
+                    title="Supprimer cette ligne"
                   >
-                    🟢 Coloc
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => updateItem(item.id, 'isPersonal', true)}
-                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
-                      item.isPersonal
-                        ? 'bg-blue-600 text-white shadow-sm'
-                        : 'text-gray-500 hover:text-blue-700'
-                    }`}
-                  >
-                    🔵 Perso
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
-
-                {/* Supprimer article */}
-                <button
-                  type="button"
-                  onClick={() => removeItem(item.id)}
-                  className="text-gray-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors"
-                  title="Supprimer cette ligne"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -388,7 +520,9 @@ export default function ItemReviewList({
               {colocTotal.toFixed(2)} €
             </div>
             <span className="text-[10px] text-emerald-200/80">
-              Soit {(colocTotal / (members.length || 1)).toFixed(2)} € / coloc
+              {items.some((it) => !it.isPersonal && it.assignedMemberIds && it.assignedMemberIds.length > 0 && it.assignedMemberIds.length < members.length)
+                ? 'Ventilation sur-mesure selon les articles'
+                : `Soit ${(colocTotal / (members.length || 1)).toFixed(2)} € / coloc`}
             </span>
           </div>
 
@@ -423,6 +557,144 @@ export default function ItemReviewList({
           {saving ? 'Enregistrement en cours...' : 'Inscrire au pot commun de la coloc 🚀'}
         </button>
       </div>
+
+      {/* MODAL DE SÉLECTION DES COLOCATAIRES PAR ARTICLE OU PAR LOT */}
+      {(memberPickerItem || isBatchPicker) && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-fadeIn"
+          onClick={() => {
+            setMemberPickerItem(null);
+            setIsBatchPicker(false);
+          }}
+        >
+          <div
+            className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl transition-all space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* En-tête */}
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 text-purple-700">
+                  <Users className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-black text-gray-900 truncate">
+                    {isBatchPicker ? 'Attribuer tous les articles' : 'Qui participe à cet article ?'}
+                  </h3>
+                  <p className="text-[11px] text-gray-500 font-semibold truncate">
+                    {isBatchPicker
+                      ? `${items.length} articles • ${items.reduce((s, it) => s + it.totalPrice, 0).toFixed(2)} €`
+                      : `${memberPickerItem?.name} • ${memberPickerItem?.totalPrice.toFixed(2)} €`}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMemberPickerItem(null);
+                  setIsBatchPicker(false);
+                }}
+                className="rounded-xl p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Raccourcis rapides */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setTempSelectedMemberIds(members.map((m) => m.id))}
+                className="flex-1 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 py-1.5 text-xs font-bold text-emerald-800 transition-colors"
+              >
+                🟢 Toute la coloc
+              </button>
+              <button
+                type="button"
+                onClick={() => setTempSelectedMemberIds([payerId])}
+                className="flex-1 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 py-1.5 text-xs font-bold text-blue-800 transition-colors"
+              >
+                🔵 {payerId === currentMember?.id ? 'Moi seul' : `${members.find((m) => m.id === payerId)?.name || 'Payeur'} seul`}
+              </button>
+            </div>
+
+            {/* Liste des colocataires */}
+            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+              {members.map((m) => {
+                const isChecked = tempSelectedMemberIds.includes(m.id);
+                const isPayer = m.id === payerId;
+                const activeTotal = isBatchPicker
+                  ? items.reduce((s, it) => s + it.totalPrice, 0)
+                  : memberPickerItem?.totalPrice || 0;
+                const share =
+                  tempSelectedMemberIds.length > 0 && isChecked
+                    ? activeTotal / tempSelectedMemberIds.length
+                    : null;
+
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => toggleMemberInPicker(m.id)}
+                    className={`w-full flex items-center justify-between rounded-2xl border p-2.5 text-left transition-all ${
+                      isChecked
+                        ? 'border-purple-400 bg-purple-50/60 shadow-xs'
+                        : 'border-gray-200 bg-gray-50/60 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="text-xl">{m.avatar}</span>
+                      <div>
+                        <span className="text-xs font-bold text-gray-900 block">
+                          {m.name} {isPayer ? '(Payeur)' : ''}
+                        </span>
+                        {share !== null && (
+                          <span className="text-[10px] font-semibold text-purple-700">
+                            Sa part : {share.toFixed(2)} €
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      className={`flex h-5 w-5 items-center justify-center rounded-lg border transition-all ${
+                        isChecked
+                          ? 'border-purple-600 bg-purple-600 text-white'
+                          : 'border-gray-300 bg-white'
+                      }`}
+                    >
+                      {isChecked && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Footer */}
+            <div className="pt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMemberPickerItem(null);
+                  setIsBatchPicker(false);
+                }}
+                className="flex-1 rounded-xl border border-gray-200 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-100"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={saveMemberPicker}
+                disabled={tempSelectedMemberIds.length === 0}
+                className="flex-1 rounded-xl bg-purple-600 hover:bg-purple-700 disabled:opacity-40 py-2.5 text-xs font-bold text-white shadow-md transition-all active:scale-95"
+              >
+                Valider ({tempSelectedMemberIds.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

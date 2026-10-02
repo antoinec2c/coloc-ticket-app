@@ -1225,6 +1225,409 @@ suite('20. Édition Rapide d\'un Article (Nom, Prix, Quantité)', () => {
   });
 });
 
+// ----------------------------------------------------
+// SUITE 21 : SÉLECTION DE CERTAINS COLOCATAIRES PAR ARTICLE (SOUS-ENSEMBLE / CUSTOM FLATM внутр)
+// ----------------------------------------------------
+suite('21. Sélection Personnalisée de Colocataires par Article (Subset & Multi-Colocs)', () => {
+  const alice: Member = { id: 'm-1', name: 'Alice', avatar: '👩', color: '#10b981' };
+  const bob: Member = { id: 'm-2', name: 'Bob', avatar: '👨', color: '#3b82f6' };
+  const charlie: Member = { id: 'm-3', name: 'Charlie', avatar: '🧑', color: '#f59e0b' };
+  const david: Member = { id: 'm-4', name: 'David', avatar: '🦊', color: '#8b5cf6' };
+  const fourMembers = [alice, bob, charlie, david];
+
+  test('Article partagé uniquement entre un sous-ensemble de colocataires (Bob et Charlie)', () => {
+    // Alice paie 20€ de pizzas partagées uniquement entre Bob et Charlie (2 colocs sur 4)
+    const exp: Expense = {
+      id: 'exp-subset-item',
+      title: 'Pizzas duo',
+      totalAmount: 20,
+      colocAmount: 20,
+      persoAmount: 0,
+      date: '2026-09-10',
+      payerId: alice.id,
+      payer: alice,
+      items: [
+        {
+          id: 'item-pizza',
+          name: 'Pizzas Bob & Charlie',
+          quantity: 2,
+          unitPrice: 10,
+          totalPrice: 20,
+          isPersonal: false,
+          assignedMemberIds: [bob.id, charlie.id],
+        },
+      ],
+    };
+
+    const res = calculateBalances(fourMembers, [exp], []);
+
+    assertEqual(res.totalColocExpenses, 20, 'Total partagé = 20€');
+
+    const balAlice = res.balances.find((b) => b.member.id === alice.id)!;
+    const balBob = res.balances.find((b) => b.member.id === bob.id)!;
+    const balCharlie = res.balances.find((b) => b.member.id === charlie.id)!;
+    const balDavid = res.balances.find((b) => b.member.id === david.id)!;
+
+    // Alice a payé 20€, sa part est 0€ -> net = +20€
+    assertEqual(balAlice.totalPaid, 20, 'Alice a payé 20€');
+    assertEqual(balAlice.totalShare, 0, 'Alice ne participe pas à la pizza (part = 0€)');
+    assertEqual(balAlice.netBalance, 20, 'Alice doit recevoir +20€');
+
+    // Bob doit 10€
+    assertEqual(balBob.totalShare, 10, 'Part de Bob = 10€');
+    assertEqual(balBob.netBalance, -10, 'Bob doit -10€');
+
+    // Charlie doit 10€
+    assertEqual(balCharlie.totalShare, 10, 'Part de Charlie = 10€');
+    assertEqual(balCharlie.netBalance, -10, 'Charlie doit -10€');
+
+    // David n\'est pas concerné = 0€
+    assertEqual(balDavid.totalShare, 0, 'Part de David = 0€');
+    assertEqual(balDavid.netBalance, 0, 'David n\'est pas impacté (solde = 0€)');
+
+    // Dettes : Bob doit 10€ à Alice, Charlie doit 10€ à Alice
+    assertEqual(res.debts.length, 2, '2 virements nécessaires');
+    const bobDebt = res.debts.find((d) => d.from.id === bob.id);
+    const charlieDebt = res.debts.find((d) => d.from.id === charlie.id);
+    assertEqual(bobDebt?.to.id, alice.id, 'Bob rembourse Alice');
+    assertEqual(bobDebt?.amount, 10, '10€ de Bob');
+    assertEqual(charlieDebt?.to.id, alice.id, 'Charlie rembourse Alice');
+    assertEqual(charlieDebt?.amount, 10, '10€ de Charlie');
+  });
+
+  test('Ticket mixte complet : Toute la coloc, Perso, Sous-ensemble (2 colocs), et Avance unitaire', () => {
+    // 3 membres : Alice, Bob, Charlie
+    const three = [alice, bob, charlie];
+    // Alice paie :
+    // 1. Pain (6€) -> Toute la coloc (2€ chacun)
+    // 2. Gel douche perso (5€) -> Perso Alice (0€ coloc)
+    // 3. Pack bières (9€) -> Alice & Bob (4.50€ chacun)
+    // 4. Sandwich (4€) -> Bob seul (4€ pour Bob)
+    const mixedExp: Expense = {
+      id: 'exp-mixed',
+      title: 'Courses mixtes Carrefour',
+      totalAmount: 24,
+      colocAmount: 19,
+      persoAmount: 5,
+      date: '2026-09-10',
+      payerId: alice.id,
+      payer: alice,
+      items: [
+        { id: 'it-1', name: 'Pain', quantity: 1, unitPrice: 6, totalPrice: 6, isPersonal: false }, // toute la coloc
+        { id: 'it-2', name: 'Gel douche perso', quantity: 1, unitPrice: 5, totalPrice: 5, isPersonal: true }, // perso
+        { id: 'it-3', name: 'Pack bieres', quantity: 1, unitPrice: 9, totalPrice: 9, isPersonal: false, assignedMemberIds: [alice.id, bob.id] }, // Alice & Bob
+        { id: 'it-4', name: 'Sandwich Bob', quantity: 1, unitPrice: 4, totalPrice: 4, isPersonal: false, assignedMemberIds: [bob.id] }, // Bob seul
+      ],
+    };
+
+    const res = calculateBalances(three, [mixedExp], []);
+
+    assertEqual(res.totalColocExpenses, 19, 'Total partagé = 6 + 9 + 4 = 19€');
+
+    const balAlice = res.balances.find((b) => b.member.id === alice.id)!;
+    const balBob = res.balances.find((b) => b.member.id === bob.id)!;
+    const balCharlie = res.balances.find((b) => b.member.id === charlie.id)!;
+
+    // Alice : payé 19€, part = 2 (pain) + 4.50 (bières) = 6.50€ -> Net = 19 - 6.50 = +12.50€
+    assertEqual(balAlice.totalPaid, 19, 'Alice a avancé 19€ pour la coloc');
+    assertEqual(balAlice.totalShare, 6.50, 'Part Alice = 2€ + 4.50€ = 6.50€');
+    assertEqual(balAlice.netBalance, 12.50, 'Net Alice = +12.50€');
+
+    // Bob : payé 0€, part = 2 (pain) + 4.50 (bières) + 4 (sandwich) = 10.50€ -> Net = -10.50€
+    assertEqual(balBob.totalPaid, 0, 'Bob a payé 0€');
+    assertEqual(balBob.totalShare, 10.50, 'Part Bob = 2€ + 4.50€ + 4€ = 10.50€');
+    assertEqual(balBob.netBalance, -10.50, 'Net Bob = -10.50€');
+
+    // Charlie : payé 0€, part = 2 (pain) = 2.00€ -> Net = -2.00€
+    assertEqual(balCharlie.totalPaid, 0, 'Charlie a payé 0€');
+    assertEqual(balCharlie.totalShare, 2.00, 'Part Charlie = 2€');
+    assertEqual(balCharlie.netBalance, -2.00, 'Net Charlie = -2.00€');
+
+    // Dettes : Bob doit 10.50€ à Alice, Charlie doit 2.00€ à Alice
+    assertEqual(res.debts.length, 2, '2 remboursements simplifiés');
+    const bobDebt = res.debts.find((d) => d.from.id === bob.id);
+    const charlieDebt = res.debts.find((d) => d.from.id === charlie.id);
+    assertEqual(bobDebt?.amount, 10.50, 'Bob rembourse 10.50€');
+    assertEqual(charlieDebt?.amount, 2.00, 'Charlie rembourse 2.00€');
+  });
+
+  test('Support transparent du format string JSON pour assignedMemberIds (simulation SQLite)', () => {
+    const expWithJsonString: Expense = {
+      id: 'exp-json',
+      title: 'Achat SQLite JSON',
+      totalAmount: 30,
+      colocAmount: 30,
+      persoAmount: 0,
+      date: '2026-09-10',
+      payerId: alice.id,
+      payer: alice,
+      items: [
+        {
+          id: 'it-json',
+          name: 'Lessive',
+          quantity: 1,
+          unitPrice: 30,
+          totalPrice: 30,
+          isPersonal: false,
+          assignedMemberIds: JSON.stringify([bob.id, charlie.id]) as any,
+        },
+      ],
+    };
+
+    const res = calculateBalances([alice, bob, charlie], [expWithJsonString], []);
+    assertEqual(res.totalColocExpenses, 30, 'Total coloc = 30€');
+    const balBob = res.balances.find((b) => b.member.id === bob.id)!;
+    const balCharlie = res.balances.find((b) => b.member.id === charlie.id)!;
+    assertEqual(balBob.totalShare, 15, 'Part Bob = 15€');
+    assertEqual(balCharlie.totalShare, 15, 'Part Charlie = 15€');
+  });
+
+  test('Simulation ZeroWaitReview : Sélection de colocataires et mise à jour dynamique', () => {
+    // 1. Initialement, l\'article est pour toute la coloc
+    let currentItems: ExpenseItem[] = [
+      { id: 'i1', name: 'Glace vanille', quantity: 1, unitPrice: 6, totalPrice: 6, isPersonal: false },
+    ];
+
+    // 2. L\'utilisateur ouvre le modal et sélectionne Alice et Charlie (sans Bob)
+    const selected = [alice.id, charlie.id];
+    currentItems = currentItems.map((it) =>
+      it.id === 'i1'
+        ? {
+            ...it,
+            isPersonal: false,
+            assignedMemberIds: selected,
+          }
+        : it
+    );
+
+    assertEqual(currentItems[0].isPersonal, false, 'Article non perso');
+    assertEqual(currentItems[0].assignedMemberIds?.length, 2, '2 membres assignés');
+    assert(currentItems[0].assignedMemberIds?.includes(alice.id) ?? false, 'Contient Alice');
+    assert(currentItems[0].assignedMemberIds?.includes(charlie.id) ?? false, 'Contient Charlie');
+
+    // 3. Calcul de solde
+    const exp: Expense = {
+      id: 'e-sim',
+      title: 'Courses Glace',
+      totalAmount: 6,
+      colocAmount: 6,
+      persoAmount: 0,
+      date: '2026-09-10',
+      payerId: alice.id,
+      payer: alice,
+      items: currentItems,
+    };
+
+    const res = calculateBalances([alice, bob, charlie], [exp], []);
+    const balAlice = res.balances.find((b) => b.member.id === alice.id)!;
+    const balBob = res.balances.find((b) => b.member.id === bob.id)!;
+    const balCharlie = res.balances.find((b) => b.member.id === charlie.id)!;
+
+    assertEqual(balAlice.netBalance, 3, 'Alice avance 6€, part 3€ -> net = +3€');
+    assertEqual(balBob.netBalance, 0, 'Bob n\'a pas mangé de glace -> net = 0€');
+    assertEqual(balCharlie.netBalance, -3, 'Charlie part 3€ -> net = -3€');
+  });
+
+  test('Attribution d\'un article excluant totalement le payeur (Alice paie pour Bob et Charlie)', () => {
+    // Alice paie 20€ pour Bob et Charlie (Alice ne consomme rien de cet article)
+    const exp: Expense = {
+      id: 'e-no-payer',
+      title: 'Repas Bob & Charlie',
+      totalAmount: 20,
+      colocAmount: 20,
+      persoAmount: 0,
+      date: '2026-09-11',
+      payerId: alice.id,
+      payer: alice,
+      items: [
+        {
+          id: 'i-excl-payer',
+          name: 'Menu Duo',
+          quantity: 1,
+          unitPrice: 20,
+          totalPrice: 20,
+          isPersonal: false,
+          assignedMemberIds: [bob.id, charlie.id],
+        },
+      ],
+    };
+
+    const res = calculateBalances([alice, bob, charlie], [exp], []);
+    const balAlice = res.balances.find((b) => b.member.id === alice.id)!;
+    const balBob = res.balances.find((b) => b.member.id === bob.id)!;
+    const balCharlie = res.balances.find((b) => b.member.id === charlie.id)!;
+
+    // Alice a payé 20€, sa part est 0€ -> net = +20€
+    assertEqual(balAlice.totalPaid, 20, 'Alice a avancé 20€');
+    assertEqual(balAlice.totalShare, 0, 'Part Alice = 0€');
+    assertEqual(balAlice.netBalance, 20, 'Alice doit récupérer 20€');
+
+    // Bob et Charlie doivent 10€ chacun
+    assertEqual(balBob.totalShare, 10, 'Part Bob = 10€');
+    assertEqual(balBob.netBalance, -10, 'Bob doit 10€');
+    assertEqual(balCharlie.totalShare, 10, 'Part Charlie = 10€');
+    assertEqual(balCharlie.netBalance, -10, 'Charlie doit 10€');
+
+    // Dettes : Bob -> Alice (10€), Charlie -> Alice (10€)
+    assertEqual(res.debts.length, 2, '2 dettes distinctes');
+    const bobDebt = res.debts.find((d) => d.from.id === bob.id);
+    const charlieDebt = res.debts.find((d) => d.from.id === charlie.id);
+    assertEqual(bobDebt?.to.id, alice.id, 'Bob rembourse Alice');
+    assertEqual(bobDebt?.amount, 10, 'Bob rembourse 10€');
+    assertEqual(charlieDebt?.to.id, alice.id, 'Charlie rembourse Alice');
+    assertEqual(charlieDebt?.amount, 10, 'Charlie rembourse 10€');
+  });
+
+  test('Robustesse face aux membres supprimés ou invalides dans assignedMemberIds', () => {
+    // Article avec un membre valide (Bob) et un ID supprimé / inexistant ('mem-deleted')
+    const expWithDeleted: Expense = {
+      id: 'e-del',
+      title: 'Achat coloc avec ancien membre',
+      totalAmount: 10,
+      colocAmount: 10,
+      persoAmount: 0,
+      date: '2026-09-11',
+      payerId: alice.id,
+      payer: alice,
+      items: [
+        {
+          id: 'i-del',
+          name: 'Produit spécial',
+          quantity: 1,
+          unitPrice: 10,
+          totalPrice: 10,
+          isPersonal: false,
+          assignedMemberIds: ['mem-deleted', bob.id],
+        },
+      ],
+    };
+
+    const res = calculateBalances([alice, bob, charlie], [expWithDeleted], []);
+    const balBob = res.balances.find((b) => b.member.id === bob.id)!;
+    const balAlice = res.balances.find((b) => b.member.id === alice.id)!;
+
+    // Bob est le seul membre valide assigné -> prend 100% de la part (10€)
+    assertEqual(balBob.totalShare, 10, 'Bob est le seul membre actif assigné = 10€');
+    assertEqual(balAlice.netBalance, 10, 'Alice récupère 10€');
+
+    // Et si l\'assignation ne contient QUE des membres supprimés ?
+    const expOnlyDeleted: Expense = {
+      id: 'e-only-del',
+      title: 'Achat tous fantômes',
+      totalAmount: 12,
+      colocAmount: 12,
+      persoAmount: 0,
+      date: '2026-09-11',
+      payerId: alice.id,
+      payer: alice,
+      items: [
+        {
+          id: 'i-ghost',
+          name: 'Produit orphelin',
+          quantity: 1,
+          unitPrice: 12,
+          totalPrice: 12,
+          isPersonal: false,
+          assignedMemberIds: ['ghost-1', 'ghost-2'],
+        },
+      ],
+    };
+
+    // Doit se replier sur toute la colocation active (12€ / 3 = 4€ chacun) sans crash
+    const resGhost = calculateBalances([alice, bob, charlie], [expOnlyDeleted], []);
+    resGhost.balances.forEach((b) => {
+      assertEqual(b.totalShare, 4, `Repli équitable : ${b.member.name} prend 4€`);
+    });
+  });
+
+  test('Changement de payeur : les articles marqués Perso restent au payeur actif sans créer de fausses dettes', () => {
+    // Si un article est marqué isPersonal: true avec assignedMemberIds absent ou undefined
+    // et que le payeur est Bob, l\'article ne doit PAS impacter Alice
+    const exp: Expense = {
+      id: 'e-payer-change',
+      title: 'Courses Bob avec perso',
+      totalAmount: 30,
+      colocAmount: 10,
+      persoAmount: 20,
+      date: '2026-09-11',
+      payerId: bob.id,
+      payer: bob,
+      items: [
+        { id: 'i-coloc', name: 'Pain commun', quantity: 1, unitPrice: 10, totalPrice: 10, isPersonal: false },
+        { id: 'i-perso', name: 'Shampoing Bob', quantity: 1, unitPrice: 20, totalPrice: 20, isPersonal: true },
+      ],
+    };
+
+    const res = calculateBalances([alice, bob, charlie], [exp], []);
+    assertEqual(res.totalColocExpenses, 10, 'Seul le pain commun (10€) est dans le pot');
+
+    const balBob = res.balances.find((b) => b.member.id === bob.id)!;
+    // 10€ divisé entre Alice, Bob, Charlie = 3.33€ chacun
+    // Bob a avancé 10€ coloc, part 3.33€ -> net = +6.67€
+    assertEqual(balBob.totalPaid, 10, 'Bob a avancé 10€ pour le coloc');
+    assertEqual(balBob.netBalance, 6.67, 'Solde net de Bob');
+  });
+
+  test('Attribution par lot (Batch) sur une sélection de colocataires', () => {
+    let batchItems: ExpenseItem[] = [
+      { id: 'b1', name: 'Bières', quantity: 1, unitPrice: 8, totalPrice: 8, isPersonal: false },
+      { id: 'b2', name: 'Pizzas', quantity: 2, unitPrice: 6, totalPrice: 12, isPersonal: false },
+    ];
+
+    // Simulation du batch picker : attribution de tous les articles à Alice et Bob
+    const targetMembers = [alice.id, bob.id];
+    batchItems = batchItems.map((it) => ({
+      ...it,
+      isPersonal: false,
+      assignedMemberIds: targetMembers,
+    }));
+
+    const exp: Expense = {
+      id: 'e-batch',
+      title: 'Soirée Alice & Bob',
+      totalAmount: 20,
+      colocAmount: 20,
+      persoAmount: 0,
+      date: '2026-09-11',
+      payerId: alice.id,
+      payer: alice,
+      items: batchItems,
+    };
+
+    const res = calculateBalances([alice, bob, charlie], [exp], []);
+    const balCharlie = res.balances.find((b) => b.member.id === charlie.id)!;
+    assertEqual(balCharlie.totalShare, 0, 'Charlie n\'est pas dans le lot -> 0€');
+    assertEqual(balCharlie.netBalance, 0, 'Charlie net = 0€');
+
+    const balAlice = res.balances.find((b) => b.member.id === alice.id)!;
+    const balBob = res.balances.find((b) => b.member.id === bob.id)!;
+    assertEqual(balAlice.netBalance, 10, 'Alice avance 20€, part 10€ -> net = +10€');
+    assertEqual(balBob.netBalance, -10, 'Bob part 10€ -> net = -10€');
+  });
+
+  test('Réinitialisation propre des attributions personnalisées lors d\'un passage en Coloc ou vocal', () => {
+    let item: ExpenseItem = {
+      id: 'i-reset',
+      name: 'Chocolat',
+      quantity: 1,
+      unitPrice: 5,
+      totalPrice: 5,
+      isPersonal: false,
+      assignedMemberIds: [alice.id, bob.id],
+    };
+
+    // 1. Passage en Coloc via toggle / bouton -> assignedMemberIds doit être réinitialisé
+    item = { ...item, isPersonal: false, assignedMemberIds: undefined };
+    assertEqual(item.assignedMemberIds, undefined, 'assignedMemberIds doit être undefined');
+    assertEqual(item.isPersonal, false, 'Doit être en Coloc');
+
+    // 2. Passage en Perso via vocal -> assignedMemberIds doit être réinitialisé
+    item = { ...item, isPersonal: true, assignedMemberIds: undefined };
+    assertEqual(item.assignedMemberIds, undefined, 'assignedMemberIds doit être undefined en Perso');
+    assertEqual(item.isPersonal, true, 'Doit être en Perso');
+  });
+});
+
 // ==========================================
 // RAPPORT FINAL D'EXÉCUTION
 // ==========================================

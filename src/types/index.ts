@@ -24,6 +24,7 @@ export interface ExpenseItem {
   totalPrice: number;
   isPersonal: boolean; // false = Coloc (partagé), true = Perso (gardé pour soi)
   category?: string;
+  assignedMemberIds?: string[]; // IDs des colocataires bénéficiaires pour cet article (si vide/non défini : toute la coloc si !isPersonal, ou le payeur si isPersonal)
 }
 
 export type SplitType = 'all_equal' | 'subset_equal' | 'custom' | 'single_member' | 'personal';
@@ -89,6 +90,7 @@ export interface ExtractedReceipt {
     totalPrice: number;
     isPersonal?: boolean;
     category?: string;
+    assignedMemberIds?: string[];
   }>;
   total: number;
   confidenceNotes?: string;

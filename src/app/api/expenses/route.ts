@@ -15,7 +15,19 @@ export async function GET(request: Request) {
       orderBy: { date: 'desc' },
     });
 
-    return NextResponse.json(expenses);
+    const parsedExpenses = expenses.map((e: any) => ({
+      ...e,
+      items: e.items.map((i: any) => ({
+        ...i,
+        assignedMemberIds: i.assignedMemberIds
+          ? (typeof i.assignedMemberIds === 'string'
+              ? JSON.parse(i.assignedMemberIds)
+              : i.assignedMemberIds)
+          : undefined,
+      })),
+    }));
+
+    return NextResponse.json(parsedExpenses);
   } catch (error) {
     console.error('Erreur GET expenses:', error);
     return NextResponse.json(
@@ -54,7 +66,24 @@ export async function POST(request: Request) {
 
     const itemsToCreate = items.map((item: any) => {
       const price = Number(item.totalPrice) || (Number(item.quantity || 1) * Number(item.unitPrice || 0));
-      const isPersonal = Boolean(item.isPersonal);
+      
+      let assigned: string[] = [];
+      if (item.assignedMemberIds) {
+        if (Array.isArray(item.assignedMemberIds)) {
+          assigned = item.assignedMemberIds;
+        } else if (typeof item.assignedMemberIds === 'string') {
+          try {
+            assigned = JSON.parse(item.assignedMemberIds);
+          } catch {
+            assigned = [];
+          }
+        }
+      }
+
+      // Est personnel si marqué isPersonal ET pas d'autres colocs assignés
+      // OU si assignedMemberIds contient uniquement le payeur
+      const hasOtherAssigned = assigned.some((id) => id !== payerId);
+      const isPersonal = (Boolean(item.isPersonal) && !hasOtherAssigned) || (assigned.length === 1 && assigned[0] === payerId);
 
       if (isPersonal) {
         persoAmount += price;
@@ -69,6 +98,7 @@ export async function POST(request: Request) {
         totalPrice: Math.round(price * 100) / 100,
         isPersonal,
         category: item.category || 'Alimentation',
+        assignedMemberIds: assigned.length > 0 && (!isPersonal || hasOtherAssigned) ? JSON.stringify(assigned) : null,
       };
     });
 
@@ -104,7 +134,19 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json(expense, { status: 201 });
+    const formattedExpense = {
+      ...expense,
+      items: expense.items.map((i) => ({
+        ...i,
+        assignedMemberIds: i.assignedMemberIds
+          ? (typeof i.assignedMemberIds === 'string'
+              ? JSON.parse(i.assignedMemberIds)
+              : i.assignedMemberIds)
+          : undefined,
+      })),
+    };
+
+    return NextResponse.json(formattedExpense, { status: 201 });
   } catch (error) {
     console.error('Erreur POST expense:', error);
     return NextResponse.json(

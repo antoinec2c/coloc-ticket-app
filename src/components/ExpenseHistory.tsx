@@ -144,6 +144,24 @@ export default function ExpenseHistory({ expenses, onExpenseDeleted }: Props) {
                       <span className="rounded-lg bg-emerald-100 px-2 py-0.5 text-xs font-black text-emerald-800">
                         Coloc: {expense.colocAmount.toFixed(2)} €
                       </span>
+                      {(() => {
+                        const hasCustomItems = expense.items?.some((it) => {
+                          let assigned = it.assignedMemberIds;
+                          if (typeof assigned === 'string') {
+                            try { assigned = JSON.parse(assigned); } catch { assigned = []; }
+                          }
+                          const valid = Array.isArray(assigned) ? assigned.filter((id) => members.some((m) => m.id === id)) : [];
+                          return !it.isPersonal && valid.length > 0 && valid.length < members.length;
+                        });
+                        if (hasCustomItems && split?.type !== 'custom' && split?.type !== 'single_member') {
+                          return (
+                            <span className="rounded-lg bg-purple-100 px-2 py-0.5 text-[11px] font-bold text-purple-800 border border-purple-200">
+                              👥 Certains
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
                       {split?.type === 'custom' && (
                         <span className="rounded-lg bg-purple-100 px-2 py-0.5 text-[11px] font-bold text-purple-800">
                           ⚖️ Sur-mesure
@@ -221,43 +239,62 @@ export default function ExpenseHistory({ expenses, onExpenseDeleted }: Props) {
                     )}
 
                     <div className="divide-y divide-gray-100 max-h-56 overflow-y-auto">
-                      {expense.items?.map((it) => (
-                        <div
-                          key={it.id}
-                          className="flex items-center justify-between py-1.5 text-xs"
-                        >
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`h-2 w-2 rounded-full ${
-                                it.isPersonal ? 'bg-blue-500' : 'bg-emerald-500'
-                              }`}
-                            />
-                            <span className="font-semibold text-gray-800">
-                              {it.name}
-                            </span>
-                            {it.quantity > 1 && (
-                              <span className="text-gray-400 text-[10px]">
-                                (x{it.quantity})
-                              </span>
-                            )}
-                          </div>
+                      {expense.items?.map((it) => {
+                        let assigned = it.assignedMemberIds;
+                        if (typeof assigned === 'string') {
+                          try { assigned = JSON.parse(assigned); } catch { assigned = []; }
+                        }
+                        const valid = Array.isArray(assigned) ? assigned.filter((id) => members.some((m) => m.id === id)) : [];
+                        const isCustomItem = !it.isPersonal && valid.length > 0 && valid.length < members.length;
 
-                          <div className="flex items-center gap-2">
-                            <span
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                it.isPersonal
-                                  ? 'bg-blue-50 text-blue-700'
-                                  : 'bg-emerald-50 text-emerald-700'
-                              }`}
-                            >
-                              {it.isPersonal ? 'Perso' : 'Coloc'}
-                            </span>
-                            <span className="font-bold text-gray-900">
-                              {it.totalPrice.toFixed(2)} €
-                            </span>
+                        return (
+                          <div
+                            key={it.id}
+                            className="flex items-center justify-between py-1.5 text-xs"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`h-2 w-2 rounded-full ${
+                                  it.isPersonal
+                                    ? 'bg-blue-500'
+                                    : isCustomItem
+                                    ? 'bg-purple-500'
+                                    : 'bg-emerald-500'
+                                }`}
+                              />
+                              <span className="font-semibold text-gray-800">
+                                {it.name}
+                              </span>
+                              {it.quantity > 1 && (
+                                <span className="text-gray-400 text-[10px]">
+                                  (x{it.quantity})
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  it.isPersonal
+                                    ? 'bg-blue-50 text-blue-700'
+                                    : isCustomItem
+                                    ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                    : 'bg-emerald-50 text-emerald-700'
+                                }`}
+                              >
+                                {it.isPersonal
+                                  ? 'Perso'
+                                  : isCustomItem
+                                  ? `👥 ${members.filter((m) => valid.includes(m.id)).map((m) => m.name).join(', ') || `${valid.length} colocs`}`
+                                  : 'Coloc'}
+                              </span>
+                              <span className="font-bold text-gray-900">
+                                {it.totalPrice.toFixed(2)} €
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
 
                     <div className="flex justify-end pt-2 border-t border-gray-100">

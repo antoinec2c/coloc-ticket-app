@@ -125,7 +125,74 @@ export function calculateBalances(
       return;
     }
 
-    // 5. Cas standard / Rétrocompatibilité : répartition équitable entre tous les membres actifs
+    // 5. Répartition article par article (si items renseignés)
+    if (expense.items && expense.items.length > 0) {
+      let expenseColocTotal = 0;
+
+      expense.items.forEach((item) => {
+        const price =
+          typeof item.totalPrice === 'number' && item.totalPrice > 0
+            ? item.totalPrice
+            : (Number(item.quantity) || 1) * (Number(item.unitPrice) || 0);
+
+        if (price <= 0) return;
+
+        let assigned: string[] = [];
+        if (item.assignedMemberIds) {
+          if (Array.isArray(item.assignedMemberIds)) {
+            assigned = item.assignedMemberIds;
+          } else if (typeof item.assignedMemberIds === 'string') {
+            try {
+              assigned = JSON.parse(item.assignedMemberIds);
+            } catch {
+              assigned = [];
+            }
+          }
+        }
+
+        // Est 100% personnel au payeur si isPersonal ET aucun colocataire tiers assigné
+        // OU si assignedMemberIds contient uniquement le payeur
+        const hasOtherRoommates = assigned.some(
+          (id) => id !== expense.payerId && memberMap.has(id)
+        );
+        const isPurelyPersonal =
+          (Boolean(item.isPersonal) && !hasOtherRoommates) ||
+          (assigned.length === 1 && assigned[0] === expense.payerId);
+
+        if (isPurelyPersonal) {
+          return;
+        }
+
+        // Déterminer les bénéficiaires
+        let beneficiaries: string[];
+        if (assigned.length > 0) {
+          const valid = assigned.filter((id) => memberMap.has(id));
+          beneficiaries = valid.length > 0 ? valid : members.map((m) => m.id);
+        } else {
+          beneficiaries = members.map((m) => m.id);
+        }
+
+        expenseColocTotal += price;
+        const sharePerBeneficiary = price / beneficiaries.length;
+
+        beneficiaries.forEach((id) => {
+          const bal = memberMap.get(id);
+          if (bal) {
+            bal.totalShare += sharePerBeneficiary;
+          }
+        });
+      });
+
+      totalColocExpenses += expenseColocTotal;
+
+      const payerBal = memberMap.get(expense.payerId);
+      if (payerBal) {
+        payerBal.totalPaid += expenseColocTotal;
+      }
+      return;
+    }
+
+    // 6. Cas standard / Rétrocompatibilité : répartition équitable entre tous les membres actifs
     const colocPart = expense.colocAmount || 0;
     if (colocPart <= 0) return;
 

@@ -68,15 +68,30 @@ export async function GET(request: Request) {
         color: e.payer.color,
         colocationId: e.payer.colocationId,
       },
-      items: e.items.map((i) => ({
-        id: i.id,
-        name: i.name,
-        quantity: i.quantity,
-        unitPrice: i.unitPrice,
-        totalPrice: i.totalPrice,
-        isPersonal: i.isPersonal,
-        category: i.category,
-      })),
+      items: e.items.map((i) => {
+        let assigned: string[] | undefined = undefined;
+        if (i.assignedMemberIds) {
+          if (typeof i.assignedMemberIds === 'string') {
+            try {
+              assigned = JSON.parse(i.assignedMemberIds);
+            } catch {
+              assigned = undefined;
+            }
+          } else if (Array.isArray(i.assignedMemberIds)) {
+            assigned = i.assignedMemberIds;
+          }
+        }
+        return {
+          id: i.id,
+          name: i.name,
+          quantity: i.quantity,
+          unitPrice: i.unitPrice,
+          totalPrice: i.totalPrice,
+          isPersonal: i.isPersonal,
+          category: i.category,
+          assignedMemberIds: assigned,
+        };
+      }),
       createdAt: e.createdAt.toISOString(),
     }));
 

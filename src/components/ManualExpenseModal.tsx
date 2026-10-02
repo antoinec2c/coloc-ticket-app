@@ -196,6 +196,7 @@ export default function ManualExpenseModal({ onClose, onSaved }: Props) {
         totalPrice: numTotal,
         isPersonal: false,
         category: 'Avance',
+        assignedMemberIds: [targetMemberId],
       });
     } else if (mainMode === 'all') {
       if (isEqualSplit) {
@@ -254,6 +255,7 @@ export default function ManualExpenseModal({ onClose, onSaved }: Props) {
           totalPrice: numTotal,
           isPersonal: false,
           category: 'Coloc',
+          assignedMemberIds: selectedMemberIds,
         });
       } else {
         // Montants sur mesure pour la sélection
@@ -281,6 +283,7 @@ export default function ManualExpenseModal({ onClose, onSaved }: Props) {
           totalPrice: numTotal,
           isPersonal: false,
           category: 'Coloc',
+          assignedMemberIds: selectedMemberIds,
         });
       }
     }

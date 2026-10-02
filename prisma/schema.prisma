@@ -65,6 +65,7 @@ model ExpenseItem {
   totalPrice       Float
   isPersonal       Boolean  @default(false)
   category         String   @default("Alimentation")
+  assignedMemberIds String?
 
   expenseId        String
   expense          Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
