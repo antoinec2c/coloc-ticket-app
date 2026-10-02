@@ -250,11 +250,11 @@ export default function ExpenseHistory({ expenses, onExpenseDeleted }: Props) {
                         return (
                           <div
                             key={it.id}
-                            className="flex items-center justify-between py-1.5 text-xs"
+                            className="flex items-start justify-between py-1.5 text-xs gap-2 min-w-0"
                           >
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-start gap-2 flex-1 min-w-0">
                               <span
-                                className={`h-2 w-2 rounded-full ${
+                                className={`h-2 w-2 rounded-full mt-1 shrink-0 ${
                                   it.isPersonal
                                     ? 'bg-blue-500'
                                     : isCustomItem
@@ -262,19 +262,21 @@ export default function ExpenseHistory({ expenses, onExpenseDeleted }: Props) {
                                     : 'bg-emerald-500'
                                 }`}
                               />
-                              <span className="font-semibold text-gray-800">
-                                {it.name}
-                              </span>
-                              {it.quantity > 1 && (
-                                <span className="text-gray-400 text-[10px]">
-                                  (x{it.quantity})
+                              <div className="min-w-0">
+                                <span className="font-semibold text-gray-800 break-words">
+                                  {it.name}
                                 </span>
-                              )}
+                                {it.quantity > 1 && (
+                                  <span className="text-gray-400 text-[10px] ml-1">
+                                    (x{it.quantity})
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 shrink-0">
                               <span
-                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded max-w-[85px] sm:max-w-[130px] truncate ${
                                   it.isPersonal
                                     ? 'bg-blue-50 text-blue-700'
                                     : isCustomItem

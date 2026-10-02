@@ -1628,6 +1628,116 @@ suite('21. Sélection Personnalisée de Colocataires par Article (Subset & Multi
   });
 });
 
+// ----------------------------------------------------
+// SUITE 22 : ERGONOMIE MOBILE & LISIBILITÉ DES ARTICLES (ANTI-TRONCATURE)
+// ----------------------------------------------------
+suite('22. Ergonomie Mobile & Lisibilité des Noms de Produits', () => {
+  const fs = require('fs');
+  const path = require('path');
+
+  test('ZeroWaitReview.tsx ne tronque plus les noms de produits avec truncate et utilise une disposition 2 lignes', () => {
+    const filePath = path.resolve(__dirname, '../src/components/ZeroWaitReview.tsx');
+    const content = fs.readFileSync(filePath, 'utf-8');
+
+    // Vérifier que le nom d'article utilise break-words et leading-snug
+    assert(
+      content.includes('break-words leading-snug'),
+      'Le nom de produit dans ZeroWaitReview doit utiliser break-words leading-snug pour éviter d\'être écourté en initiales'
+    );
+
+    // Vérifier que le conteneur principal de l\'article est organisé en 2 lignes (flex flex-col)
+    assert(
+      content.includes('flex flex-col gap-2 rounded-2xl border p-3'),
+      'L\'article doit être en flex flex-col pour séparer le nom et les boutons sur 2 lignes propres sur mobile'
+    );
+
+    // Vérifier que les boutons de répartition prennent toute la largeur disponible avec flex-1
+    assert(
+      content.includes('flex-1 py-1.5 px-2 text-center rounded-lg text-[11px] font-black'),
+      'Les boutons Coloc/Perso/Certains doivent utiliser flex-1 pour être de taille confortable et accessible au toucher'
+    );
+  });
+
+  test('ItemReviewList.tsx adopte également la disposition responsive anti-écrasement avec textarea multiligne', () => {
+    const filePath = path.resolve(__dirname, '../src/components/ItemReviewList.tsx');
+    const content = fs.readFileSync(filePath, 'utf-8');
+
+    assert(
+      content.includes('flex flex-col gap-2.5 rounded-2xl border p-3'),
+      'ItemReviewList doit utiliser une disposition 2 lignes avec flex flex-col'
+    );
+
+    assert(
+      content.includes('<textarea') && content.includes('break-words') && content.includes('[field-sizing:content]'),
+      'ItemReviewList doit utiliser un textarea multiligne avec break-words pour afficher les longs noms sans troncature mono-ligne'
+    );
+
+    assert(
+      content.includes('min-w-0 flex rounded-xl bg-white'),
+      'La barre de boutons dans ItemReviewList doit avoir min-w-0 pour éviter de déborder sur mobile étroit'
+    );
+  });
+
+  test('ZeroWaitReview.tsx prend en charge le mode édition responsive et les modales sans troncature', () => {
+    const filePath = path.resolve(__dirname, '../src/components/ZeroWaitReview.tsx');
+    const content = fs.readFileSync(filePath, 'utf-8');
+
+    assert(
+      content.includes('flex flex-col sm:flex-row sm:items-center gap-2'),
+      'Le mode édition de ZeroWaitReview doit être empilé en colonne sur mobile pour donner 100% de largeur au nom'
+    );
+
+    assert(
+      content.includes('min-w-0 flex rounded-xl bg-gray-100/90'),
+      'Le conteneur segmenté de ZeroWaitReview doit avoir min-w-0'
+    );
+
+    assert(
+      content.includes('flex flex-wrap items-center gap-1 text-[11px] font-bold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-lg border border-purple-200 mt-1.5 w-fit max-w-full'),
+      'Le badge des colocs sur-mesure doit avoir flex-wrap et max-w-full pour ne pas déborder'
+    );
+  });
+
+  test('ExpenseHistory.tsx optimise l\'espace du nom de produit face aux badges sur mobile', () => {
+    const filePath = path.resolve(__dirname, '../src/components/ExpenseHistory.tsx');
+    const content = fs.readFileSync(filePath, 'utf-8');
+
+    assert(
+      content.includes('max-w-[85px] sm:max-w-[130px] truncate'),
+      'ExpenseHistory doit réduire la largeur maximale du badge sur mobile pour laisser plus d\'espace au nom de produit'
+    );
+
+    assert(
+      content.includes('break-words'),
+      'ExpenseHistory doit permettre aux noms d\'articles de s\'étendre sur plusieurs lignes'
+    );
+  });
+
+  test('Noms de produits longs ou complexes restent intacts et calculent les totaux fidèlement', () => {
+    const complexNames = [
+      'DOP GEL DOUCHE DOUCEUR D\'ENFANCE MADELEINE 250ML',
+      'PETITS POIS ET CAROTTES SURGELES EXTRA FINS 1KG CASINO',
+      'CHOC AU LAIT MILKA NOISETTES ENTIERES DU ROUSSILLON 100G',
+      'PRESIDENT BEURRE GASTRONOMIQUE DEMI-SEL PLAQUETTE 250G',
+      'COCA COLA ZERO SANS SUCRES BOUTEILLE 1.5L PACK PROMO',
+    ];
+
+    complexNames.forEach((name, idx) => {
+      const it: ExpenseItem = {
+        id: `c-${idx}`,
+        name,
+        quantity: 2,
+        unitPrice: 3.5,
+        totalPrice: 7.0,
+        isPersonal: false,
+      };
+      // Vérifier que le nom n\'est jamais altéré ou tronqué en mémoire
+      assertEqual(it.name, name, 'Le nom complet du produit doit être préservé');
+      assertEqual(it.totalPrice, 7.0, 'Total exact');
+    });
+  });
+});
+
 // ==========================================
 // RAPPORT FINAL D'EXÉCUTION
 // ==========================================

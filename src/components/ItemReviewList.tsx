@@ -351,7 +351,7 @@ export default function ItemReviewList({
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               onClick={setAllColoc}
               className="text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1.5 rounded-lg transition-colors"
@@ -395,7 +395,7 @@ export default function ItemReviewList({
             return (
               <div
                 key={item.id}
-                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border p-3 transition-all ${
+                className={`flex flex-col gap-2.5 rounded-2xl border p-3 transition-all ${
                   isPerso
                     ? 'border-blue-200 bg-blue-50/50 shadow-sm'
                     : isCustom
@@ -403,82 +403,86 @@ export default function ItemReviewList({
                     : 'border-emerald-200 bg-emerald-50/30'
                 }`}
               >
-                {/* Infos article (Nom + Catégorie) */}
-                <div className="flex-1 space-y-1">
-                  <input
-                    type="text"
-                    value={item.name}
-                    onChange={(e) => updateItem(item.id, 'name', e.target.value)}
-                    className="w-full font-bold text-xs sm:text-sm text-gray-900 bg-transparent focus:outline-none focus:border-b border-emerald-400"
-                  />
-                  <div className="flex items-center gap-2 text-[11px] text-gray-500">
-                    <span className="rounded-md bg-white/80 px-2 py-0.5 font-medium border border-gray-200">
-                      {item.category || 'Alimentation'}
-                    </span>
-                    <span>
-                      {item.quantity} x {item.unitPrice.toFixed(2)} €
-                    </span>
-                  </div>
-
-                  {isCustom && validAssigned && (
-                    <div className="flex items-center gap-1 text-[11px] font-bold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-lg border border-purple-200 mt-1 w-fit">
-                      <span>👥 Pour :</span>
-                      <span>
-                        {members
-                          .filter((m) => validAssigned.includes(m.id))
-                          .map((m) => m.name)
-                          .join(', ') || `${validAssigned.length} colocs`}
+                {/* Ligne 1 : Nom de l'article (éditable) & Prix */}
+                <div className="flex items-start justify-between gap-3 min-w-0">
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <textarea
+                      value={item.name}
+                      onChange={(e) => updateItem(item.id, 'name', e.target.value)}
+                      rows={Math.max(1, Math.min(3, Math.ceil((item.name || '').length / 28)))}
+                      className="w-full resize-none font-bold text-xs sm:text-sm text-gray-900 bg-transparent focus:outline-none focus:border-b border-emerald-400 break-words leading-snug [field-sizing:content]"
+                    />
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-gray-500">
+                      <span className="rounded-md bg-white/80 px-2 py-0.5 font-medium border border-gray-200">
+                        {item.category || 'Alimentation'}
                       </span>
-                      <span className="text-purple-600 font-semibold">
-                        ({(item.totalPrice / validAssigned.length).toFixed(2)} €/p)
+                      <span>
+                        {item.quantity} x {item.unitPrice.toFixed(2)} €
                       </span>
                     </div>
-                  )}
-                </div>
 
-                {/* Prix & Boutons d'attribution Coloc vs Perso vs Certains */}
-                <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
-                  <div className="text-right">
+                    {isCustom && validAssigned && (
+                      <div className="flex flex-wrap items-center gap-1 text-[11px] font-bold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-lg border border-purple-200 mt-1 w-fit max-w-full">
+                        <span>👥 Pour :</span>
+                        <span className="break-words">
+                          {members
+                            .filter((m) => validAssigned.includes(m.id))
+                            .map((m) => m.name)
+                            .join(', ') || `${validAssigned.length} colocs`}
+                        </span>
+                        <span className="text-purple-600 font-semibold ml-1 shrink-0">
+                          ({(item.totalPrice / validAssigned.length).toFixed(2)} €/p)
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="text-right shrink-0">
                     <span className="text-sm sm:text-base font-black text-gray-900">
                       {item.totalPrice.toFixed(2)} €
                     </span>
                   </div>
+                </div>
 
+                {/* Ligne 2 : Sélecteur tactile Coloc / Perso / Certains & Supprimer */}
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100/80">
                   {/* Sélecteur tactile Coloc / Perso / Certains */}
-                  <div className="flex rounded-xl bg-white p-1 shadow-sm border border-gray-200">
+                  <div className="flex-1 min-w-0 flex rounded-xl bg-white p-0.5 shadow-xs border border-gray-200">
                     <button
                       type="button"
                       onClick={() => setItemAssignment(item.id, false, undefined)}
-                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                      className={`flex-1 py-1.5 px-1.5 sm:px-2 text-center rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 ${
                         isAll
                           ? 'bg-emerald-600 text-white shadow-sm'
                           : 'text-gray-500 hover:text-emerald-700'
                       }`}
                     >
-                      🟢 Coloc
+                      <span>🟢</span>
+                      <span>Coloc</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setItemAssignment(item.id, true, undefined)}
-                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                      className={`flex-1 py-1.5 px-1.5 sm:px-2 text-center rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 ${
                         isPerso
                           ? 'bg-blue-600 text-white shadow-sm'
                           : 'text-gray-500 hover:text-blue-700'
                       }`}
                     >
-                      🔵 Perso
+                      <span>🔵</span>
+                      <span>Perso</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => openMemberPicker(item)}
-                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${
+                      className={`flex-1 py-1.5 px-1.5 sm:px-2 text-center rounded-lg text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 ${
                         isCustom
                           ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-300'
                           : 'text-gray-500 hover:text-purple-700'
                       }`}
                     >
-                      <Users className="h-3.5 w-3.5" />
-                      <span>{isCustom ? `${validAssigned?.length}` : 'Certains'}</span>
+                      <Users className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">{isCustom ? `${validAssigned?.length}` : 'Certains'}</span>
                     </button>
                   </div>
 
@@ -486,7 +490,7 @@ export default function ItemReviewList({
                   <button
                     type="button"
                     onClick={() => removeItem(item.id)}
-                    className="text-gray-400 hover:text-rose-600 p-1 rounded-lg hover:bg-rose-50 transition-colors"
+                    className="text-gray-400 hover:text-rose-600 p-2 rounded-lg hover:bg-rose-50 transition-colors shrink-0"
                     title="Supprimer cette ligne"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -578,10 +582,10 @@ export default function ItemReviewList({
                   <Users className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-black text-gray-900 truncate">
+                  <h3 className="text-sm font-black text-gray-900 break-words">
                     {isBatchPicker ? 'Attribuer tous les articles' : 'Qui participe à cet article ?'}
                   </h3>
-                  <p className="text-[11px] text-gray-500 font-semibold truncate">
+                  <p className="text-[11px] text-gray-500 font-semibold break-words">
                     {isBatchPicker
                       ? `${items.length} articles • ${items.reduce((s, it) => s + it.totalPrice, 0).toFixed(2)} €`
                       : `${memberPickerItem?.name} • ${memberPickerItem?.totalPrice.toFixed(2)} €`}

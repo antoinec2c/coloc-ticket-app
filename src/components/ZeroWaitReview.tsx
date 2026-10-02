@@ -1109,7 +1109,7 @@ export default function ZeroWaitReview({
 
       {/* LISTE DES ARTICLES TACTILES */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between px-1">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
           <div>
             <span className="text-xs font-black text-gray-700 uppercase tracking-wider block">
               Articles ({items.length})
@@ -1120,7 +1120,7 @@ export default function ZeroWaitReview({
           </div>
 
           {items.length > 0 && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => setAllPersonal(false)}
@@ -1183,7 +1183,7 @@ export default function ZeroWaitReview({
                 onClick={(e) => e.stopPropagation()}
                 className="rounded-2xl border-2 border-emerald-400 bg-white p-3.5 shadow-md space-y-2.5 animate-fadeIn"
               >
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2">
                   <div className="flex-1 min-w-0">
                     <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5">
                       Nom de l'article
@@ -1197,8 +1197,8 @@ export default function ZeroWaitReview({
                       autoFocus
                     />
                   </div>
-                  <div className="w-24">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5 text-right">
+                  <div className="w-full sm:w-24">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase block mb-0.5 sm:text-right">
                       Prix total
                     </label>
                     <div className="relative">
@@ -1209,7 +1209,7 @@ export default function ZeroWaitReview({
                         value={editPrice}
                         onChange={(e) => setEditPrice(e.target.value)}
                         placeholder="0.00"
-                        className="w-full rounded-xl border border-gray-300 pl-2 pr-6 py-1.5 text-xs font-black text-gray-900 focus:border-emerald-500 focus:outline-none text-right"
+                        className="w-full rounded-xl border border-gray-300 pl-2 pr-6 py-1.5 text-xs font-black text-gray-900 focus:border-emerald-500 focus:outline-none sm:text-right"
                       />
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">
                         €
@@ -1266,7 +1266,7 @@ export default function ZeroWaitReview({
                       toggleItem(item);
                     }
                   }}
-                  className={`flex items-center justify-between rounded-2xl border p-3 cursor-pointer select-none transition-all active:scale-[0.99] ${
+                  className={`flex flex-col gap-2 rounded-2xl border p-3 cursor-pointer select-none transition-all active:scale-[0.99] ${
                     isPerso
                       ? 'border-blue-300 bg-blue-50/70 shadow-sm'
                       : isCustom
@@ -1274,48 +1274,66 @@ export default function ZeroWaitReview({
                       : 'border-emerald-200 bg-white hover:bg-emerald-50/30 shadow-sm'
                   }`}
                 >
-                  <div className="flex-1 pr-2 min-w-0">
-                    <div className="text-xs sm:text-sm font-bold text-gray-900 truncate">
-                      {item.name}
-                    </div>
-                    <div className="text-[11px] text-gray-400 mt-0.5 flex items-center gap-2">
-                      <span>{item.quantity > 1 ? `x${item.quantity} • ` : ''}{item.category || 'Alimentation'}</span>
-                      <span className="font-semibold text-gray-700">{item.totalPrice.toFixed(2)} €</span>
+                  {/* Ligne 1 : Nom complet du produit & Prix */}
+                  <div className="flex items-start justify-between gap-3 min-w-0">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs sm:text-sm font-bold text-gray-900 break-words leading-snug">
+                        {item.name}
+                      </div>
+                      <div className="text-[11px] text-gray-400 mt-0.5 flex flex-wrap items-center gap-1.5">
+                        {item.quantity > 1 && (
+                          <span className="font-semibold text-gray-600 bg-gray-100 px-1.5 py-0.2 rounded text-[10px]">
+                            x{item.quantity}
+                          </span>
+                        )}
+                        <span>{item.category || 'Alimentation'}</span>
+                        {item.quantity > 1 && item.unitPrice > 0 && (
+                          <span className="text-gray-400">({item.unitPrice.toFixed(2)} €/u)</span>
+                        )}
+                      </div>
+
+                      {isCustom && validAssigned && (
+                        <div className="flex flex-wrap items-center gap-1 text-[11px] font-bold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-lg border border-purple-200 mt-1.5 w-fit max-w-full">
+                          <span>👥 Pour :</span>
+                          <span className="break-words">
+                            {members
+                              .filter((m) => validAssigned.includes(m.id))
+                              .map((m) => m.name)
+                              .join(', ') || `${validAssigned.length} colocs`}
+                          </span>
+                          <span className="text-purple-600 font-semibold ml-1 shrink-0">
+                            ({(item.totalPrice / validAssigned.length).toFixed(2)} €/p)
+                          </span>
+                        </div>
+                      )}
                     </div>
 
-                    {isCustom && validAssigned && (
-                      <div className="flex items-center gap-1 text-[11px] font-bold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-lg border border-purple-200 mt-1.5 w-fit">
-                        <span>👥 Pour :</span>
-                        <span className="truncate max-w-[190px]">
-                          {members
-                            .filter((m) => validAssigned.includes(m.id))
-                            .map((m) => m.name)
-                            .join(', ') || `${validAssigned.length} colocs`}
-                        </span>
-                        <span className="text-purple-600 font-semibold">
-                          ({(item.totalPrice / validAssigned.length).toFixed(2)} €/p)
-                        </span>
-                      </div>
-                    )}
+                    <div className="text-right shrink-0">
+                      <span className="text-xs sm:text-sm font-black text-gray-900">
+                        {item.totalPrice.toFixed(2)} €
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {/* Sélecteur explicite Coloc / Perso / Certains */}
-                    <div className="flex rounded-xl bg-gray-100/90 p-0.5 border border-gray-200/80 shadow-inner">
+                  {/* Ligne 2 : Sélecteur Coloc / Perso / Certains & Actions */}
+                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100/80">
+                    {/* Sélecteur tactile Coloc / Perso / Certains */}
+                    <div className="flex-1 min-w-0 flex rounded-xl bg-gray-100/90 p-0.5 border border-gray-200/80 shadow-inner">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setItemPersonal(item.id, false);
                         }}
-                        className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition-all ${
+                        className={`flex-1 py-1.5 px-2 text-center rounded-lg text-[11px] font-black transition-all flex items-center justify-center gap-1 ${
                           isAll
                             ? 'bg-emerald-600 text-white shadow-sm'
                             : 'text-gray-500 hover:text-emerald-700'
                         }`}
                         title="Partagé avec toute la coloc"
                       >
-                        🟢 Coloc
+                        <span>🟢</span>
+                        <span>Coloc</span>
                       </button>
                       <button
                         type="button"
@@ -1323,27 +1341,28 @@ export default function ZeroWaitReview({
                           e.stopPropagation();
                           setItemPersonal(item.id, true);
                         }}
-                        className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition-all ${
+                        className={`flex-1 py-1.5 px-2 text-center rounded-lg text-[11px] font-black transition-all flex items-center justify-center gap-1 ${
                           isPerso
                             ? 'bg-blue-600 text-white shadow-sm'
                             : 'text-gray-500 hover:text-blue-700'
                         }`}
                         title="Achat perso (pour moi seul)"
                       >
-                        🔵 Perso
+                        <span>🔵</span>
+                        <span>Perso</span>
                       </button>
                       <button
                         type="button"
                         onClick={(e) => openMemberPicker(item, e)}
-                        className={`rounded-lg px-2.5 py-1 text-[11px] font-black transition-all flex items-center gap-1 ${
+                        className={`flex-1 py-1.5 px-2 text-center rounded-lg text-[11px] font-black transition-all flex items-center justify-center gap-1 ${
                           isCustom
                             ? 'bg-purple-600 text-white shadow-sm ring-1 ring-purple-300'
                             : 'text-gray-500 hover:text-purple-700'
                         }`}
                         title="Choisir des colocataires précis"
                       >
-                        <Users className="h-3 w-3" />
-                        <span>{isCustom ? `${item.assignedMemberIds?.length}` : 'Certains'}</span>
+                        <Users className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{isCustom ? `${item.assignedMemberIds?.length}` : 'Certains'}</span>
                       </button>
                     </div>
 
@@ -1351,7 +1370,7 @@ export default function ZeroWaitReview({
                     <button
                       type="button"
                       onClick={(e) => startEditItem(item, e)}
-                      className="text-gray-400 hover:text-emerald-700 p-1.5 rounded-lg hover:bg-emerald-50 transition-colors"
+                      className="text-gray-400 hover:text-emerald-700 p-1.5 rounded-lg hover:bg-gray-100 transition-colors shrink-0"
                       title="Modifier le nom ou le prix de cet article"
                     >
                       <Edit2 className="h-3.5 w-3.5" />
@@ -1364,7 +1383,7 @@ export default function ZeroWaitReview({
                         e.stopPropagation();
                         removeItem(item.id);
                       }}
-                      className="text-gray-300 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"
+                      className="text-gray-300 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors shrink-0"
                       title="Supprimer cet article"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -1424,10 +1443,10 @@ export default function ZeroWaitReview({
                   <Users className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-sm font-black text-gray-900 truncate">
+                  <h3 className="text-sm font-black text-gray-900 break-words">
                     {isBatchPicker ? 'Attribuer tous les articles' : 'Qui participe à cet article ?'}
                   </h3>
-                  <p className="text-[11px] text-gray-500 font-semibold truncate">
+                  <p className="text-[11px] text-gray-500 font-semibold break-words">
                     {isBatchPicker
                       ? `${items.length} articles • ${items.reduce((s, it) => s + it.totalPrice, 0).toFixed(2)} €`
                       : `${memberPickerItem?.name} • ${memberPickerItem?.totalPrice.toFixed(2)} €`}
